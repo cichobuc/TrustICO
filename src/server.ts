@@ -1,4 +1,8 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { registerCompanySearch } from "./tools/company-search.js";
+import { registerCompanyPeople } from "./tools/company-people.js";
+import { registerCompanyHistory } from "./tools/company-history.js";
+import { registerCompanyBranches } from "./tools/company-branches.js";
 
 export function createMcpServer(): McpServer {
   const server = new McpServer({
@@ -6,7 +10,11 @@ export function createMcpServer(): McpServer {
     version: "1.0.0",
   });
 
-  // Tools will be registered here in subsequent phases
+  // Phase 2a: RPO-based tools
+  registerCompanySearch(server);
+  registerCompanyPeople(server);
+  registerCompanyHistory(server);
+  registerCompanyBranches(server);
 
   return server;
 }
