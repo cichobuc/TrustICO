@@ -211,6 +211,26 @@ chore: configure Dockerfile and render.yaml
 
 ---
 
+## Fáza 4b: Skills a Agent definície
+> Session 8b | Po úspešnom deployi
+
+- [ ] `.claude/agents/api-hunter.md` — Slovak Registry API Specialist prompt
+- [ ] `.claude/agents/financial-analyst.md` — Účtovný expert prompt
+- [ ] `.claude/agents/code-reviewer.md` — Senior reviewer prompt
+- [ ] `.claude/skills/test-api.md` — `/test-api {adapter}` skill
+- [ ] `.claude/skills/check-health.md` — `/check-health` skill
+- [ ] `.claude/skills/profile.md` — `/profile {ico}` skill
+- [ ] **COMMIT:** `feat: add Claude Code agents and skills`
+
+**Prompt:**
+```
+Prečítaj AGENTS-AND-SKILLS.md. Vytvor .claude/agents/ a .claude/skills/ podľa špecifikácie.
+Pre agents použi frontmatter formát (name, description, model, tools).
+Pre skills použi formát s arguments.
+```
+
+---
+
 ## Fáza 5: Integration testy
 > Session 9 | /clear pred štartom
 
