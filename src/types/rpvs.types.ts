@@ -2,9 +2,11 @@
  * Types for RPVS (Register partnerov verejného sektora) OData API.
  * Endpoint: rpvs.gov.sk/OpenData
  *
- * Quirks:
- * - OData v4 — $filter=Ico eq '36421928'
- * - $top=0 is NOT allowed!
+ * Quirks (verified 2026-03-25):
+ * - OData v4
+ * - $top is NOT allowed (server returns 400)
+ * - $expand on PartneriVerejnehoSektora doesn't work for KUV/OO
+ * - Must query Partneri entity set with $filter=PartneriVerejnehoSektora/any()
  * - Most companies are NOT in the register (only public sector partners)
  */
 
@@ -15,17 +17,30 @@ export type RpvsODataResponse<T> = {
   value: T[];
 };
 
-// --- Partner entity ---
+// --- Partneri entity (root, has KUV and OO navigation props) ---
 
 export type RpvsPartner = {
   Id: number;
-  ObchodneMeno: string;
-  Ico: string;
-  AdresaSidla?: string;
-  DatumRegistracie?: string;
-  DatumVymazu?: string;
+  CisloVlozky: number;
+  PartneriVerejnehoSektora?: RpvsPartnerVS[];
   KonecniUzivateliaVyhod?: RpvsKuv[];
   OpravneneOsoby?: RpvsOpravnenaOsoba[];
+};
+
+// --- PartnerVerejnehoSektora (the company identity with ICO) ---
+
+export type RpvsPartnerVS = {
+  Id: number;
+  Meno?: string;
+  Priezvisko?: string;
+  DatumNarodenia?: string;
+  TitulPred?: string;
+  TitulZa?: string;
+  ObchodneMeno?: string;
+  Ico?: string;
+  FormaOsoby?: string;
+  PlatnostOd?: string;
+  PlatnostDo?: string;
 };
 
 // --- Konečný užívateľ výhod ---
@@ -35,8 +50,9 @@ export type RpvsKuv = {
   Meno?: string;
   Priezvisko?: string;
   DatumNarodenia?: string;
-  StatnaPrislusnost?: string;
   JeVerejnyCinitel?: boolean;
+  ObchodneMeno?: string;
+  Ico?: string;
   PlatnostOd?: string;
   PlatnostDo?: string;
 };
@@ -49,6 +65,7 @@ export type RpvsOpravnenaOsoba = {
   Priezvisko?: string;
   ObchodneMeno?: string;
   Ico?: string;
+  FormaOsoby?: string;
   PlatnostOd?: string;
   PlatnostDo?: string;
 };
@@ -68,7 +85,6 @@ export type CompanyKuvResult = {
     meno: string | null;
     priezvisko: string | null;
     datumNarodenia: string | null;
-    statnaPrislusnost: string | null;
     jeVerejnyCinitel: boolean;
     od: string | null;
     do: string | null;

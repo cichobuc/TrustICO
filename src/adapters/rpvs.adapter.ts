@@ -2,9 +2,13 @@
  * Adapter for RPVS (Register partnerov verejného sektora).
  * Endpoint: rpvs.gov.sk/OpenData
  *
- * Quirks (verified 2026-03-24):
- * - OData v4 — $filter=Ico eq '{ico}'
- * - $top=0 is NOT allowed!
+ * Quirks (verified 2026-03-25):
+ * - OData v4
+ * - $top is NOT allowed (server returns 400)
+ * - KonecniUzivateliaVyhod and OpravneneOsoby live on Partneri entity,
+ *   NOT on PartneriVerejnehoSektora. Must query:
+ *   Partneri?$filter=PartneriVerejnehoSektora/any(p: p/Ico eq '{ico}')
+ *   &$expand=KonecniUzivateliaVyhod,OpravneneOsoby,PartneriVerejnehoSektora
  * - Most companies are NOT in the register (only public sector partners)
  * - Always return { found: false } for empty results, not an error
  */
@@ -25,14 +29,16 @@ export class RpvsAdapter {
 
   /**
    * Look up KÚV (konečný užívateľ výhod) and oprávnené osoby by IČO.
-   * Expands KonecniUzivateliaVyhod and OpravneneOsoby.
+   *
+   * Queries Partneri entity set with any() filter on nested
+   * PartneriVerejnehoSektora collection, then expands KUV and OO.
    */
   async getKuv(ico: string): Promise<AdapterResult<CompanyKuvResult>> {
     const start = Date.now();
     try {
-      const filter = encodeURIComponent(`Ico eq '${ico}'`);
-      const expand = encodeURIComponent("KonecniUzivateliaVyhod,OpravneneOsoby");
-      const url = `${RPVS_BASE_URL}/PartneriVerejnehoSektora?$filter=${filter}&$expand=${expand}`;
+      const filter = `PartneriVerejnehoSektora/any(p: p/Ico eq '${ico}')`;
+      const expand = "KonecniUzivateliaVyhod,OpravneneOsoby,PartneriVerejnehoSektora";
+      const url = `${RPVS_BASE_URL}/Partneri?$filter=${filter}&$expand=${expand}`;
 
       const resp = await this.http.get<RpvsODataResponse<RpvsPartner>>(url, {
         source: SOURCE,
@@ -47,8 +53,7 @@ export class RpvsAdapter {
         };
       }
 
-      const data = resp.data;
-      const partners = data?.value ?? [];
+      const partners = resp.data?.value ?? [];
 
       if (partners.length === 0) {
         return {
@@ -64,19 +69,25 @@ export class RpvsAdapter {
       }
 
       const partner = partners[0];
+
+      // Find the most recent active PVS entry matching this ICO
+      const pvsEntries = (partner.PartneriVerejnehoSektora ?? [])
+        .filter((pvs) => pvs.Ico === ico)
+        .sort((a, b) => (b.PlatnostOd ?? "").localeCompare(a.PlatnostOd ?? ""));
+      const latestPvs = pvsEntries[0];
+
       const result: CompanyKuvResult = {
         ico,
         found: true,
         partner: {
           id: partner.Id,
-          obchodneMeno: partner.ObchodneMeno,
-          datumRegistracie: partner.DatumRegistracie ?? null,
+          obchodneMeno: latestPvs?.ObchodneMeno ?? ico,
+          datumRegistracie: latestPvs?.PlatnostOd ?? null,
         },
         konecniUzivatelia: (partner.KonecniUzivateliaVyhod ?? []).map((kuv) => ({
           meno: kuv.Meno ?? null,
           priezvisko: kuv.Priezvisko ?? null,
           datumNarodenia: kuv.DatumNarodenia ?? null,
-          statnaPrislusnost: kuv.StatnaPrislusnost ?? null,
           jeVerejnyCinitel: kuv.JeVerejnyCinitel ?? false,
           od: kuv.PlatnostOd ?? null,
           do: kuv.PlatnostDo ?? null,

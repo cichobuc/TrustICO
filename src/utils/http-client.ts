@@ -129,7 +129,7 @@ export class HttpClient {
           data = Buffer.from(arrayBuffer) as T;
         } else {
           const contentType = response.headers.get("content-type") ?? "";
-          if (contentType.includes("application/json")) {
+          if (contentType.includes("/json") || contentType.includes("+json")) {
             data = (await response.json()) as T;
           } else {
             data = (await response.text()) as T;

@@ -2,29 +2,24 @@
  * Adapter for ITMS2014+ (eurofondy).
  * Endpoint: opendata.itms2014.sk/v2
  *
- * Quirks (from CLAUDE.md):
- * - No direct search by IČO on projects!
- * - /v2/subjekty/{id} works only with internal ID
- * - Best-effort: iterate pages of projects, filter by prijimatel.subjekt.ico
- * - Low priority, may be slow
+ * Quirks (verified 2026-03-25):
+ * - No /v2/projekty endpoint (returns 404)!
+ * - /v2/subjekty/{id} works only with internal ID (IDs are sparse)
+ * - /v2/operacneProgramy works (list/detail)
+ * - /v2/pohladavkovyDoklad works (list, has dlznik with ICO)
+ * - No way to search projects by IČO — best-effort via pohladavkovyDoklad
  */
 
 import { HttpClient } from "../utils/http-client.js";
 import type { AdapterResult } from "../types/common.types.js";
 import type {
   ItmsSubjektRaw,
-  ItmsProjektRaw,
-  ItmsProjektyPageRaw,
   CompanyEuFundsResult,
   EuFundProject,
 } from "../types/itms.types.js";
 
 const ITMS_BASE_URL = "https://opendata.itms2014.sk/v2";
 const SOURCE = "itms";
-
-/** Max pages to iterate when searching projects by IČO (best-effort). */
-const MAX_PAGES = 5;
-const PAGE_SIZE = 100;
 
 export class ItmsAdapter {
   constructor(private readonly http: HttpClient) {}
@@ -63,65 +58,81 @@ export class ItmsAdapter {
   }
 
   /**
-   * Best-effort search for EU fund projects by IČO.
-   * Iterates project pages and filters by prijimatel.subjekt.ico.
-   * Limited to MAX_PAGES to avoid excessive API calls.
+   * Best-effort search for EU fund involvement by IČO.
+   *
+   * The ITMS v2 API does NOT have a /projekty endpoint or IČO search.
+   * We check /pohladavkovyDoklad (debt claims) which references subjekty with ICO.
+   * This gives partial signal but not full project data.
    */
   async findPrijimatel(ico: string): Promise<AdapterResult<CompanyEuFundsResult>> {
     const start = Date.now();
     try {
-      const matchedProjects: EuFundProject[] = [];
-      let prijimatel: { id: number; nazov: string } | null = null;
+      // Try pohladavkovyDoklad — it lists claims with dlznik.ico
+      const url = `${ITMS_BASE_URL}/pohladavkovyDoklad`;
+      const resp = await this.http.get<PohladavkovyDokladRow[]>(url, { source: SOURCE });
 
-      for (let page = 0; page < MAX_PAGES; page++) {
-        const url = `${ITMS_BASE_URL}/projekty?minimalProject=true&page=${page}&size=${PAGE_SIZE}`;
-        const resp = await this.http.get<ItmsProjektyPageRaw>(url, { source: SOURCE });
-
-        if (resp.status >= 400) break;
-
-        const projects = resp.data?.content ?? [];
-        if (projects.length === 0) break;
-
-        for (const p of projects) {
-          if (p.prijimatel?.subjekt?.ico === ico) {
-            if (!prijimatel && p.prijimatel.subjekt.id && p.prijimatel.subjekt.nazov) {
-              prijimatel = {
-                id: p.prijimatel.subjekt.id,
-                nazov: p.prijimatel.subjekt.nazov,
-              };
-            }
-            matchedProjects.push({
-              kod: p.kod ?? null,
-              nazov: p.nazov ?? null,
-              stav: p.stav ?? null,
-              sumaZazmluvnena: p.sumaZazmluvnena ?? null,
-              operacnyProgram: p.operacnyProgram?.nazov ?? p.programoveStrukturyNazov ?? null,
-            });
-          }
-        }
-
-        // If we found matches, stop early — we have enough
-        if (matchedProjects.length > 0) break;
-
-        // Stop if this was the last page
-        const totalPages = resp.data?.totalPages ?? 0;
-        if (page + 1 >= totalPages) break;
+      if (resp.status >= 400) {
+        return {
+          found: false,
+          data: {
+            ico,
+            found: false,
+            prijimatel: null,
+            projekty: [],
+            celkovaSuma: 0,
+          },
+          error: `ITMS API error: HTTP ${resp.status}`,
+          durationMs: Date.now() - start,
+          source: SOURCE,
+        };
       }
 
-      const celkovaSuma = matchedProjects.reduce(
-        (sum, p) => sum + (p.sumaZazmluvnena ?? 0),
-        0,
-      );
+      const rows = resp.data ?? [];
+      const matched = rows.filter((r) => r.dlznik?.ico === ico);
+
+      if (matched.length === 0) {
+        // No results — this is expected for most companies
+        return {
+          found: false,
+          data: {
+            ico,
+            found: false,
+            prijimatel: null,
+            projekty: [],
+            celkovaSuma: 0,
+          },
+          durationMs: Date.now() - start,
+          source: SOURCE,
+        };
+      }
+
+      // Extract subjekt info from the first match
+      const first = matched[0];
+      const prijimatel = first.dlznik?.id && first.dlznik?.nazov
+        ? { id: first.dlznik.id, nazov: first.dlznik.nazov }
+        : (first.dlznik?.id
+          ? { id: first.dlznik.id, nazov: ico }
+          : null);
+
+      // pohladavkovyDoklad doesn't have full project data,
+      // but we can extract what's available
+      const projekty: EuFundProject[] = matched.map((r) => ({
+        kod: null,
+        nazov: r.dovodVratenia?.nazov ?? "Pohľadávkový doklad",
+        stav: r.dopadNaRozpocetEU ?? null,
+        sumaZazmluvnena: null,
+        operacnyProgram: null,
+      }));
 
       const result: CompanyEuFundsResult = {
         ico,
-        found: matchedProjects.length > 0,
+        found: true,
         prijimatel,
-        projekty: matchedProjects,
-        celkovaSuma,
+        projekty,
+        celkovaSuma: 0,
       };
 
-      return { found: result.found, data: result, durationMs: Date.now() - start, source: SOURCE };
+      return { found: true, data: result, durationMs: Date.now() - start, source: SOURCE };
     } catch (err) {
       return {
         found: false,
@@ -132,3 +143,19 @@ export class ItmsAdapter {
     }
   }
 }
+
+// --- Internal types for pohladavkovyDoklad response ---
+
+type PohladavkovyDokladRow = {
+  dlznik?: {
+    id?: number;
+    ico?: string;
+    dic?: string;
+    nazov?: string;
+    href?: string;
+  };
+  dopadNaRozpocetEU?: string;
+  dovodVratenia?: {
+    nazov?: string;
+  };
+};
