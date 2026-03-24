@@ -7,11 +7,7 @@
 
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { HttpClient } from "../utils/http-client.js";
-import { RuzAdapter } from "../adapters/ruz.adapter.js";
-
-const http = new HttpClient();
-const adapter = new RuzAdapter(http);
+import { sharedRuzAdapter as adapter } from "./_shared-clients.js";
 
 export function registerFinancialAttachment(server: McpServer): void {
   // --- financial_attachment ---
@@ -19,17 +15,12 @@ export function registerFinancialAttachment(server: McpServer): void {
     "financial_attachment",
     "Stiahne PDF prílohu (poznámky k závierke, skeny) z RegisterUZ. Vstup: attachmentId z company_financials.",
     {
-      attachmentId: z.number().describe("ID prílohy z company_financials (pole prilohy[].id)"),
+      attachmentId: z.number().int().positive().describe("ID prílohy z company_financials (pole prilohy[].id)"),
+      nazov: z.string().optional().describe("Názov prílohy (z company_financials prilohy[].nazov)"),
+      velkost: z.number().optional().describe("Veľkosť prílohy v bytoch (z company_financials prilohy[].velkost)"),
     },
-    async ({ attachmentId }) => {
+    async ({ attachmentId, nazov, velkost }) => {
       const start = Date.now();
-
-      if (!attachmentId || attachmentId <= 0) {
-        return {
-          isError: true,
-          content: [{ type: "text" as const, text: JSON.stringify({ error: "attachmentId musí byť kladné číslo" }) }],
-        };
-      }
 
       try {
         const result = await adapter.getAttachment(attachmentId);
@@ -56,7 +47,9 @@ export function registerFinancialAttachment(server: McpServer): void {
             type: "text" as const,
             text: JSON.stringify({
               attachmentId,
+              nazov: nazov ?? null,
               mimeType: result.data.mimeType,
+              velkost: velkost ?? null,
               content: result.data.content,
               _meta: {
                 source: "ruz",
@@ -86,17 +79,10 @@ export function registerFinancialAttachment(server: McpServer): void {
     "financial_report_pdf",
     "Generovaný PDF účtovného výkazu z RegisterUZ. Vstup: reportId z company_financials.",
     {
-      reportId: z.number().describe("ID výkazu z company_financials (pole vykazy[].id)"),
+      reportId: z.number().int().positive().describe("ID výkazu z company_financials (pole vykazy[].id)"),
     },
     async ({ reportId }) => {
       const start = Date.now();
-
-      if (!reportId || reportId <= 0) {
-        return {
-          isError: true,
-          content: [{ type: "text" as const, text: JSON.stringify({ error: "reportId musí byť kladné číslo" }) }],
-        };
-      }
 
       try {
         const result = await adapter.getReportPdf(reportId);

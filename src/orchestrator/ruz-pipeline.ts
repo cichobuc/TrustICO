@@ -22,7 +22,6 @@ import type {
   KlucoveUkazovatele,
   CompanyFinancialsResult,
   FinancialReportDetail,
-  ParsedTable,
 } from "../types/ruz.types.js";
 
 export class RuzPipeline {
@@ -105,11 +104,31 @@ export class RuzPipeline {
     }
 
     // Take top 5 (already sorted: latest first)
-    const statementsToProcess = filteredStatements.slice(0, 5);
-    const mappedStatements: RuzZavierkaSummary[] = [];
+    const MAX_STATEMENTS = 5;
+    const statementsToProcess = filteredStatements.slice(0, MAX_STATEMENTS);
 
+    // Step 4: Fetch ALL reports for ALL statements in parallel
+    // Collect all report IDs with their statement index, then batch-fetch
+    const allReportIds = statementsToProcess.flatMap((stmt) =>
+      (stmt.idUctovnychVykazov ?? []),
+    );
+    const reportCache = new Map<number, RuzReportRaw>();
+
+    if (allReportIds.length > 0) {
+      const reportResults = await Promise.allSettled(
+        allReportIds.map((id) => this.adapter.getReport(id)),
+      );
+      for (let i = 0; i < reportResults.length; i++) {
+        const r = reportResults[i];
+        if (r.status === "fulfilled" && r.value.found && r.value.data) {
+          reportCache.set(allReportIds[i], r.value.data);
+        }
+      }
+    }
+
+    // Map statements using cached reports
+    const mappedStatements: RuzZavierkaSummary[] = [];
     for (const stmt of statementsToProcess) {
-      // Step 4: Fetch report summaries for this statement
       const reportIds = stmt.idUctovnychVykazov ?? [];
       const reportSummaries: Array<{
         id: number;
@@ -119,14 +138,14 @@ export class RuzPipeline {
       }> = [];
 
       for (const reportId of reportIds) {
-        const reportResult = await this.adapter.getReport(reportId);
-        if (reportResult.found && reportResult.data) {
-          const firstTableName = reportResult.data.obsah?.tabulky?.[0]?.nazov?.sk ?? null;
+        const report = reportCache.get(reportId);
+        if (report) {
+          const firstTableName = report.obsah?.tabulky?.[0]?.nazov?.sk ?? null;
           reportSummaries.push({
-            id: reportResult.data.id,
-            idSablony: reportResult.data.idSablony,
+            id: report.id,
+            idSablony: report.idSablony,
             nazov: firstTableName,
-            prilohy: reportResult.data.prilohy ?? [],
+            prilohy: report.prilohy ?? [],
           });
         }
       }
@@ -135,22 +154,24 @@ export class RuzPipeline {
     }
 
     // Step 5: Extract key indicators from the latest statement's report
-    // Find a report that has BOTH a template AND actual data (obsah.tabulky)
+    // Reuse cached report data — no duplicate fetch
     let klucoveUkazovatele = emptyUkazovatele();
     if (mappedStatements.length > 0) {
       const latestStatement = mappedStatements[0];
-      // Prefer reports with a known typ (they have obsah.tabulky data)
       const reportWithData = latestStatement.vykazy.find(
         (v) => v.idSablony !== null && v.typ !== null,
       ) ?? latestStatement.vykazy.find((v) => v.idSablony !== null);
 
-      if (reportWithData) {
-        const parsedTables = await this.getReportParsed(
-          reportWithData.id,
-          reportWithData.idSablony!,
-        );
-        if (parsedTables && parsedTables.length > 0) {
-          klucoveUkazovatele = extractKlucoveUkazovatele(parsedTables);
+      if (reportWithData && reportWithData.idSablony != null) {
+        const cachedReport = reportCache.get(reportWithData.id);
+        if (cachedReport) {
+          const templateResult = await this.adapter.getTemplate(reportWithData.idSablony);
+          if (templateResult.found && templateResult.data) {
+            const parsedTables = parseReport(cachedReport, templateResult.data);
+            if (parsedTables.length > 0) {
+              klucoveUkazovatele = extractKlucoveUkazovatele(parsedTables);
+            }
+          }
         }
       }
     }
@@ -197,6 +218,7 @@ export class RuzPipeline {
       id: p.id,
       nazov: p.meno,
       velkost: p.velkostPrilohy,
+      strany: p.pocetStran ?? null,
     }));
 
     // No template or no data → return metadata only
@@ -242,26 +264,6 @@ export class RuzPipeline {
     };
   }
 
-  // --- Internal ---
-
-  private async getReportParsed(
-    reportId: number,
-    templateId: number,
-  ): Promise<ParsedTable[] | null> {
-    const [reportResult, templateResult] = await Promise.all([
-      this.adapter.getReport(reportId),
-      this.adapter.getTemplate(templateId),
-    ]);
-
-    if (
-      !reportResult.found || !reportResult.data ||
-      !templateResult.found || !templateResult.data
-    ) {
-      return null;
-    }
-
-    return parseReport(reportResult.data, templateResult.data);
-  }
 }
 
 function emptyUkazovatele(): KlucoveUkazovatele {
@@ -271,7 +273,12 @@ function emptyUkazovatele(): KlucoveUkazovatele {
     obeznyMajetok: null,
     vlastneImanie: null,
     zavazky: null,
+    kratkodobeZavazky: null,
     trzby: null,
     vysledokHospodarenia: null,
+    zadlzenost: null,
+    roa: null,
+    roe: null,
+    currentRatio: null,
   };
 }

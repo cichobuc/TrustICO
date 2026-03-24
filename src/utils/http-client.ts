@@ -147,13 +147,14 @@ export class HttpClient {
         lastError =
           err instanceof Error ? err : new Error(String(err));
 
-        // Retry timeouts — the server might recover
+        // Retry on transient errors (timeouts, network errors)
         if (lastError.name === "AbortError") {
           lastError = new Error(
             `Request to ${url} timed out after ${timeoutMs}ms`,
           );
-          continue;
         }
+        // All errors are retryable (max 1 retry with backoff)
+        continue;
       }
     }
 

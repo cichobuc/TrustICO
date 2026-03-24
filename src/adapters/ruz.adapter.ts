@@ -26,7 +26,7 @@ import type {
   RuzZavierkaSummary,
 } from "../types/ruz.types.js";
 
-const RUZ_BASE_URL = "https://registeruz.sk/cruz-public";
+const RUZ_BASE_URL = "https://www.registeruz.sk/cruz-public";
 const SOURCE = "ruz";
 const ZMENENE_OD = "2000-01-01";
 
@@ -176,6 +176,10 @@ export class RuzAdapter {
       }
 
       const contentType = resp.headers["content-type"] ?? "application/pdf";
+      // Validate binary response — reject HTML/JSON error pages
+      if (contentType.includes("text/html") || contentType.includes("application/json")) {
+        return { found: false, error: "Server vrátil neočakávaný content-type namiesto PDF", durationMs: Date.now() - start, source: SOURCE };
+      }
       const base64 = (resp.data as Buffer).toString("base64");
 
       return {
@@ -210,6 +214,10 @@ export class RuzAdapter {
       }
 
       const contentType = resp.headers["content-type"] ?? "application/pdf";
+      // Validate binary response — reject HTML/JSON error pages
+      if (contentType.includes("text/html") || contentType.includes("application/json")) {
+        return { found: false, error: "Server vrátil neočakávaný content-type namiesto PDF", durationMs: Date.now() - start, source: SOURCE };
+      }
       const base64 = (resp.data as Buffer).toString("base64");
 
       return {
@@ -263,6 +271,7 @@ export class RuzAdapter {
           id: p.id,
           nazov: p.meno,
           velkost: p.velkostPrilohy,
+          strany: p.pocetStran ?? null,
         })),
       ),
     };

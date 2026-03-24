@@ -7,30 +7,17 @@
 
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { HttpClient } from "../utils/http-client.js";
-import { RuzAdapter } from "../adapters/ruz.adapter.js";
-import { RuzPipeline } from "../orchestrator/ruz-pipeline.js";
-
-const http = new HttpClient();
-const adapter = new RuzAdapter(http);
-const pipeline = new RuzPipeline(adapter);
+import { sharedRuzPipeline as pipeline } from "./_shared-clients.js";
 
 export function registerFinancialReport(server: McpServer): void {
   server.tool(
-    "financial_report",
+    "financial_report_detail",
     "Detailný účtovný výkaz — všetky riadky s pomenovaním podľa šablóny. Vstup: reportId z company_financials výsledku.",
     {
-      reportId: z.number().describe("ID výkazu z company_financials (pole vykazy[].id)"),
+      reportId: z.number().int().positive().describe("ID výkazu z company_financials (pole vykazy[].id)"),
     },
     async ({ reportId }) => {
       const start = Date.now();
-
-      if (!reportId || reportId <= 0) {
-        return {
-          isError: true,
-          content: [{ type: "text" as const, text: JSON.stringify({ error: "reportId musí byť kladné číslo" }) }],
-        };
-      }
 
       try {
         const result = await pipeline.getReportDetail(reportId);

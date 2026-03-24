@@ -181,6 +181,7 @@ export interface RuzPrilohaSummary {
   id: number;
   nazov: string | null;
   velkost: number | null;
+  strany: number | null;
 }
 
 /** Key financial indicators extracted from parsed reports. */
@@ -190,8 +191,14 @@ export interface KlucoveUkazovatele {
   obeznyMajetok: number | null;
   vlastneImanie: number | null;
   zavazky: number | null;
+  kratkodobeZavazky: number | null;
   trzby: number | null;
   vysledokHospodarenia: number | null;
+  // Financial ratios (calculated)
+  zadlzenost: number | null;
+  roa: number | null;
+  roe: number | null;
+  currentRatio: number | null;
 }
 
 /** Parsed table with named rows — output of ruz-parser. */

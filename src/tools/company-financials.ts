@@ -7,14 +7,8 @@
 
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { HttpClient } from "../utils/http-client.js";
-import { RuzAdapter } from "../adapters/ruz.adapter.js";
-import { RuzPipeline } from "../orchestrator/ruz-pipeline.js";
+import { sharedRuzPipeline as pipeline } from "./_shared-clients.js";
 import { validateICO } from "../utils/validators.js";
-
-const http = new HttpClient();
-const adapter = new RuzAdapter(http);
-const pipeline = new RuzPipeline(adapter);
 
 export function registerCompanyFinancials(server: McpServer): void {
   server.tool(
@@ -22,7 +16,7 @@ export function registerCompanyFinancials(server: McpServer): void {
     "Účtovné závierky a kľúčové finančné dáta z RegisterUZ. Vráti zoznam závierok, výkazy, prílohy a kľúčové ukazovatele (aktíva, tržby, zisk). Vstup: 8-miestne IČO.",
     {
       ico: z.string().describe("8-miestne IČO firmy"),
-      year: z.number().optional().describe("Konkrétny rok (default: najnovšia závierka)"),
+      year: z.number().int().min(1990).max(2030).optional().describe("Konkrétny rok (default: najnovšia závierka)"),
     },
     async ({ ico, year }) => {
       const start = Date.now();

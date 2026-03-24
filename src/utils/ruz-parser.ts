@@ -189,8 +189,13 @@ export function extractKlucoveUkazovatele(
     obeznyMajetok: null,
     vlastneImanie: null,
     zavazky: null,
+    kratkodobeZavazky: null,
     trzby: null,
     vysledokHospodarenia: null,
+    zadlzenost: null,
+    roa: null,
+    roe: null,
+    currentRatio: null,
   };
 
   for (const table of tables) {
@@ -224,8 +229,8 @@ export function extractKlucoveUkazovatele(
 
     // Balance sheet — Liabilities & Equity (Strana pasív)
     if (tableName.includes("pasív") || tableName.includes("liabilities")) {
-      // Pasíva typically has 2 columns: bežné, minulé
-      const idx = 0; // current period
+      // Pasíva typically has 2 columns: bežné, minulé — find current period column
+      const idx = findCurrentPeriodColumnIndex(table);
 
       for (const row of table.riadky) {
         const name = row.nazov.toLowerCase();
@@ -234,7 +239,7 @@ export function extractKlucoveUkazovatele(
         if (
           (name.includes("vlastné imanie") || name.includes("equity")) &&
           !name.includes("zmena") &&
-          !name.includes("spolu") && // Exclude "SPOLU VLASTNÉ IMANIE A ZÁVÄZKY" total row
+          !name.includes("spolu vlastné imanie a záväzky") &&
           !result.vlastneImanie
         ) {
           result.vlastneImanie = value;
@@ -242,10 +247,19 @@ export function extractKlucoveUkazovatele(
           (name.includes("záväzky") || name.includes("liabilities")) &&
           !name.includes("krátkodob") && !name.includes("dlhodob") &&
           !name.includes("short") && !name.includes("long") &&
-          !name.includes("spolu") && // Exclude total row
+          !name.includes("spolu") &&
           !result.zavazky
         ) {
           result.zavazky = value;
+        }
+
+        // Extract krátkodobé záväzky for Current Ratio
+        if (
+          (name.includes("krátkodobé záväzky") || name.includes("short-term liabilities") ||
+           name.includes("current liabilities")) &&
+          !result.kratkodobeZavazky
+        ) {
+          result.kratkodobeZavazky = value;
         }
       }
     }
@@ -279,7 +293,31 @@ export function extractKlucoveUkazovatele(
     }
   }
 
+  // Calculate financial ratios
+  result.zadlzenost = safeDiv(result.zavazky, result.aktivaCelkom);
+  result.roa = safeDiv(result.vysledokHospodarenia, result.aktivaCelkom);
+  result.roe = safeDiv(result.vysledokHospodarenia, result.vlastneImanie);
+  result.currentRatio = safeDiv(result.obeznyMajetok, result.kratkodobeZavazky);
+
   return result;
+}
+
+/** Safe division — returns null if divisor is 0 or either operand is null. Rounds to 4 decimals. */
+function safeDiv(numerator: number | null, denominator: number | null): number | null {
+  if (numerator == null || denominator == null || denominator === 0) return null;
+  return Math.round((numerator / denominator) * 10000) / 10000;
+}
+
+/**
+ * Find the column index for current period in 2-column tables (pasíva, VZaS).
+ * Looks for "bežné" in column names; defaults to 0.
+ */
+function findCurrentPeriodColumnIndex(table: ParsedTable): number {
+  for (let i = 0; i < table.stlpce.length; i++) {
+    const col = table.stlpce[i].toLowerCase();
+    if (col.includes("bežn") || col.includes("current")) return i;
+  }
+  return 0;
 }
 
 /**
