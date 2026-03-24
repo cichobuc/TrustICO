@@ -6,6 +6,9 @@ import { registerCompanyBranches } from "./tools/company-branches.js";
 import { registerCompanyFinancials } from "./tools/company-financials.js";
 import { registerFinancialReport } from "./tools/financial-report.js";
 import { registerFinancialAttachment } from "./tools/financial-attachment.js";
+import { registerCompanyKuv } from "./tools/company-kuv.js";
+import { registerCompanyTaxStatus } from "./tools/company-tax-status.js";
+import { registerCompanyVatCheck } from "./tools/company-vat-check.js";
 
 export function createMcpServer(): McpServer {
   const server = new McpServer({
@@ -23,6 +26,11 @@ export function createMcpServer(): McpServer {
   registerCompanyFinancials(server);
   registerFinancialReport(server);
   registerFinancialAttachment(server); // registers both financial_attachment + financial_report_pdf
+
+  // Phase 2c: RPVS, FinSpr, VIES tools
+  registerCompanyKuv(server);
+  registerCompanyTaxStatus(server);
+  registerCompanyVatCheck(server);
 
   return server;
 }

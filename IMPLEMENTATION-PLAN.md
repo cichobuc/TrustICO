@@ -72,6 +72,25 @@ chore: configure Dockerfile and render.yaml
 
 ---
 
+## Fáza 1a: Dev Agents a Skills (vývojové pomôcky)
+> Session 2b | Po core infra, pred adaptermi
+
+Agenti a skills pre **STAVBU** MCP servera — pomáhajú počas vývoja.
+
+- [ ] `.claude/agents/api-hunter.md` — Slovak Registry API Specialist
+- [ ] `.claude/agents/financial-analyst.md` — Účtovný expert
+- [ ] `.claude/agents/code-reviewer.md` — Senior reviewer
+- [ ] `.claude/agents/mcp-architect.md` — MCP Protocol Expert
+- [ ] `.claude/agents/soap-wizard.md` — SOAP/XML Integration Expert
+- [ ] `.claude/skills/test-api.md` — `/test-api {adapter}` skill
+- [ ] `.claude/skills/add-adapter.md` — `/add-adapter {name}` skill
+- [ ] `.claude/skills/add-tool.md` — `/add-tool {name}` skill
+- [ ] `.claude/skills/check-health.md` — `/check-health` skill
+- [ ] `.claude/skills/simplify-adapter.md` — `/simplify-adapter {name}` skill
+- [ ] **COMMIT:** `feat: add dev agents and skills for build-time assistance`
+
+---
+
 ## Fáza 2a: RPO Adapter + Resolver
 > Session 3 | /clear pred štartom
 
@@ -211,22 +230,24 @@ chore: configure Dockerfile and render.yaml
 
 ---
 
-## Fáza 4b: Skills a Agent definície
+## Fáza 4b: Usage Agents a Skills (post-deploy)
 > Session 8b | Po úspešnom deployi
 
-- [ ] `.claude/agents/api-hunter.md` — Slovak Registry API Specialist prompt
-- [ ] `.claude/agents/financial-analyst.md` — Účtovný expert prompt
-- [ ] `.claude/agents/code-reviewer.md` — Senior reviewer prompt
-- [ ] `.claude/skills/test-api.md` — `/test-api {adapter}` skill
-- [ ] `.claude/skills/check-health.md` — `/check-health` skill
+Agenti a skills pre **POUŽÍVANIE** hotového MCP servera (due diligence, AML, porovnanie).
+Dev agents/skills (api-hunter, code-reviewer, /test-api, /add-adapter) patria do Fázy 1a — pozri nižšie.
+
+- [ ] `.claude/agents/due-diligence-analyst.md` — Kompletné hodnotenie firmy
+- [ ] `.claude/agents/financial-deep-dive.md` — Finančná analýza
+- [ ] `.claude/agents/aml-investigator.md` — AML/compliance
+- [ ] `.claude/agents/competitive-intel.md` — Porovnanie firiem
 - [ ] `.claude/skills/profile.md` — `/profile {ico}` skill
-- [ ] **COMMIT:** `feat: add Claude Code agents and skills`
+- [ ] `.claude/skills/deploy.md` — `/deploy` skill
+- [ ] **COMMIT:** `feat: add usage agents and skills`
 
 **Prompt:**
 ```
-Prečítaj AGENTS-AND-SKILLS.md. Vytvor .claude/agents/ a .claude/skills/ podľa špecifikácie.
-Pre agents použi frontmatter formát (name, description, model, tools).
-Pre skills použi formát s arguments.
+Prečítaj AGENTS-AND-SKILLS.md sekciu 2 a 3. Vytvor .claude/agents/ pre usage agentov
+a .claude/skills/ pre /profile a /deploy. Použi frontmatter formát.
 ```
 
 ---
