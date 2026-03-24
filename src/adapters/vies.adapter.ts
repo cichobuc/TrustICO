@@ -10,43 +10,11 @@
 
 import { HttpClient } from "../utils/http-client.js";
 import type { AdapterResult } from "../types/common.types.js";
+import type { ViesResponse, CompanyVatCheckResult } from "../types/vies.types.js";
+export type { CompanyVatCheckResult } from "../types/vies.types.js";
 
 const VIES_BASE_URL = "https://ec.europa.eu/taxation_customs/vies/rest-api";
 const SOURCE = "vies";
-
-// --- VIES response type ---
-
-type ViesResponse = {
-  isValid: boolean;
-  requestDate: string;
-  userError?: string;
-  name?: string;
-  address?: string;
-  requestIdentifier?: string;
-  vatNumber?: string;
-  viesApproximate?: {
-    name?: string;
-    street?: string;
-    postalCode?: string;
-    city?: string;
-    companyType?: string;
-    matchName?: number;
-    matchStreet?: number;
-    matchPostalCode?: number;
-    matchCity?: number;
-    matchCompanyType?: number;
-  };
-};
-
-// --- Mapped output type ---
-
-export type CompanyVatCheckResult = {
-  vatNumber: string;
-  valid: boolean;
-  nazov: string | null;
-  adresa: string | null;
-  datumOverenia: string;
-};
 
 export class ViesAdapter {
   constructor(private readonly http: HttpClient) {}
@@ -89,7 +57,7 @@ export class ViesAdapter {
 
       const result: CompanyVatCheckResult = {
         vatNumber: `${countryCode}${number}`,
-        valid: data.isValid,
+        valid: data.valid,
         nazov: data.name?.trim() || null,
         adresa: data.address?.trim() || null,
         datumOverenia: data.requestDate ?? new Date().toISOString().split("T")[0],

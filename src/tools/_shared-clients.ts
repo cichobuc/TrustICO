@@ -11,6 +11,9 @@ import { RuzAdapter } from "../adapters/ruz.adapter.js";
 import { RpvsAdapter } from "../adapters/rpvs.adapter.js";
 import { FinsprAdapter } from "../adapters/finspr.adapter.js";
 import { ViesAdapter } from "../adapters/vies.adapter.js";
+import { ReplikAdapter } from "../adapters/replik.adapter.js";
+import { DatahubAdapter } from "../adapters/datahub.adapter.js";
+import { ItmsAdapter } from "../adapters/itms.adapter.js";
 import { RuzPipeline } from "../orchestrator/ruz-pipeline.js";
 import { IcoResolver } from "../orchestrator/resolver.js";
 
@@ -20,5 +23,8 @@ export const sharedRuzAdapter = new RuzAdapter(sharedHttpClient);
 export const sharedRpvsAdapter = new RpvsAdapter(sharedHttpClient);
 export const sharedFinsprAdapter = new FinsprAdapter(sharedHttpClient);
 export const sharedViesAdapter = new ViesAdapter(sharedHttpClient);
+export const sharedReplikAdapter = new ReplikAdapter();
+export const sharedDatahubAdapter = new DatahubAdapter(sharedHttpClient);
+export const sharedItmsAdapter = new ItmsAdapter(sharedHttpClient);
 export const sharedRuzPipeline = new RuzPipeline(sharedRuzAdapter);
 export const sharedResolver = new IcoResolver(sharedHttpClient);

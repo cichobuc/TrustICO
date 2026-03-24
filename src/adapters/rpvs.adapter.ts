@@ -77,7 +77,7 @@ export class RpvsAdapter {
           priezvisko: kuv.Priezvisko ?? null,
           datumNarodenia: kuv.DatumNarodenia ?? null,
           statnaPrislusnost: kuv.StatnaPrislusnost ?? null,
-          jeVerejnyCinitel: kuv.VerejnyCinitel ?? false,
+          jeVerejnyCinitel: kuv.JeVerejnyCinitel ?? false,
           od: kuv.PlatnostOd ?? null,
           do: kuv.PlatnostDo ?? null,
         })),

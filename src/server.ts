@@ -9,6 +9,9 @@ import { registerFinancialAttachment } from "./tools/financial-attachment.js";
 import { registerCompanyKuv } from "./tools/company-kuv.js";
 import { registerCompanyTaxStatus } from "./tools/company-tax-status.js";
 import { registerCompanyVatCheck } from "./tools/company-vat-check.js";
+import { registerCompanyInsolvency } from "./tools/company-insolvency.js";
+import { registerCrzOvTools } from "./tools/crz-ov-tools.js";
+import { registerCompanyEuFunds } from "./tools/company-eu-funds.js";
 
 export function createMcpServer(): McpServer {
   const server = new McpServer({
@@ -31,6 +34,11 @@ export function createMcpServer(): McpServer {
   registerCompanyKuv(server);
   registerCompanyTaxStatus(server);
   registerCompanyVatCheck(server);
+
+  // Phase 2d: REPLIK, DataHub, ITMS tools
+  registerCompanyInsolvency(server); // registers company_insolvency + company_insolvency_notices + insolvency_detail
+  registerCrzOvTools(server); // registers crz_contracts + ov_filing
+  registerCompanyEuFunds(server);
 
   return server;
 }

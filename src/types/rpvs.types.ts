@@ -36,7 +36,7 @@ export type RpvsKuv = {
   Priezvisko?: string;
   DatumNarodenia?: string;
   StatnaPrislusnost?: string;
-  VerejnyCinitel?: boolean;
+  JeVerejnyCinitel?: boolean;
   PlatnostOd?: string;
   PlatnostDo?: string;
 };

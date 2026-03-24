@@ -81,7 +81,7 @@ export type FinsprIndexRow = {
 // --- Sub-source status for zdrojeStatus ---
 
 export type FinsprSubStatus = {
-  status: "ok" | "error" | "not_found";
+  status: "ok" | "error" | "not_found" | "timeout";
   durationMs: number;
   error?: string;
 };
