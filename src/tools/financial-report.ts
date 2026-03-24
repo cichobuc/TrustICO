@@ -23,6 +23,8 @@ export function registerFinancialReport(server: McpServer): void {
       reportId: z.number().describe("ID výkazu z company_financials (pole vykazy[].id)"),
     },
     async ({ reportId }) => {
+      const start = Date.now();
+
       if (!reportId || reportId <= 0) {
         return {
           isError: true,
@@ -30,15 +32,31 @@ export function registerFinancialReport(server: McpServer): void {
         };
       }
 
-      const result = await pipeline.getReportDetail(reportId);
+      try {
+        const result = await pipeline.getReportDetail(reportId);
 
-      if (!result.success || !result.data) {
+        if (!result.success || !result.data) {
+          return {
+            isError: true,
+            content: [{
+              type: "text" as const,
+              text: JSON.stringify({
+                error: result.error ?? "Nepodarilo sa získať výkaz",
+                _meta: {
+                  source: "ruz",
+                  durationMs: result.durationMs,
+                  timestamp: new Date().toISOString(),
+                },
+              }, null, 2),
+            }],
+          };
+        }
+
         return {
-          isError: true,
           content: [{
             type: "text" as const,
             text: JSON.stringify({
-              error: result.error ?? "Nepodarilo sa získať výkaz",
+              ...result.data,
               _meta: {
                 source: "ruz",
                 durationMs: result.durationMs,
@@ -47,21 +65,18 @@ export function registerFinancialReport(server: McpServer): void {
             }, null, 2),
           }],
         };
+      } catch (err) {
+        return {
+          isError: true,
+          content: [{
+            type: "text" as const,
+            text: JSON.stringify({
+              error: err instanceof Error ? err.message : "Neočakávaná chyba pri získavaní výkazu",
+              _meta: { source: "ruz", durationMs: Date.now() - start, timestamp: new Date().toISOString() },
+            }, null, 2),
+          }],
+        };
       }
-
-      return {
-        content: [{
-          type: "text" as const,
-          text: JSON.stringify({
-            ...result.data,
-            _meta: {
-              source: "ruz",
-              durationMs: result.durationMs,
-              timestamp: new Date().toISOString(),
-            },
-          }, null, 2),
-        }],
-      };
     },
   );
 }

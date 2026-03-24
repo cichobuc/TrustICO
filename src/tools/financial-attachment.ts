@@ -22,6 +22,8 @@ export function registerFinancialAttachment(server: McpServer): void {
       attachmentId: z.number().describe("ID prílohy z company_financials (pole prilohy[].id)"),
     },
     async ({ attachmentId }) => {
+      const start = Date.now();
+
       if (!attachmentId || attachmentId <= 0) {
         return {
           isError: true,
@@ -29,41 +31,53 @@ export function registerFinancialAttachment(server: McpServer): void {
         };
       }
 
-      const start = Date.now();
-      const result = await adapter.getAttachment(attachmentId);
+      try {
+        const result = await adapter.getAttachment(attachmentId);
 
-      if (!result.found || !result.data) {
+        if (!result.found || !result.data) {
+          return {
+            isError: true,
+            content: [{
+              type: "text" as const,
+              text: JSON.stringify({
+                error: result.error ?? `Príloha ${attachmentId} nebola nájdená`,
+                _meta: {
+                  source: "ruz",
+                  durationMs: result.durationMs,
+                  timestamp: new Date().toISOString(),
+                },
+              }, null, 2),
+            }],
+          };
+        }
+
         return {
-          isError: true,
           content: [{
             type: "text" as const,
             text: JSON.stringify({
-              error: result.error ?? `Príloha ${attachmentId} nebola nájdená`,
+              attachmentId,
+              mimeType: result.data.mimeType,
+              content: result.data.content,
               _meta: {
                 source: "ruz",
-                durationMs: Date.now() - start,
+                durationMs: result.durationMs,
                 timestamp: new Date().toISOString(),
               },
             }, null, 2),
           }],
         };
+      } catch (err) {
+        return {
+          isError: true,
+          content: [{
+            type: "text" as const,
+            text: JSON.stringify({
+              error: err instanceof Error ? err.message : "Neočakávaná chyba pri sťahovaní prílohy",
+              _meta: { source: "ruz", durationMs: Date.now() - start, timestamp: new Date().toISOString() },
+            }, null, 2),
+          }],
+        };
       }
-
-      return {
-        content: [{
-          type: "text" as const,
-          text: JSON.stringify({
-            attachmentId,
-            mimeType: result.data.mimeType,
-            content: result.data.content,
-            _meta: {
-              source: "ruz",
-              durationMs: result.durationMs,
-              timestamp: new Date().toISOString(),
-            },
-          }, null, 2),
-        }],
-      };
     },
   );
 
@@ -75,6 +89,8 @@ export function registerFinancialAttachment(server: McpServer): void {
       reportId: z.number().describe("ID výkazu z company_financials (pole vykazy[].id)"),
     },
     async ({ reportId }) => {
+      const start = Date.now();
+
       if (!reportId || reportId <= 0) {
         return {
           isError: true,
@@ -82,41 +98,53 @@ export function registerFinancialAttachment(server: McpServer): void {
         };
       }
 
-      const start = Date.now();
-      const result = await adapter.getReportPdf(reportId);
+      try {
+        const result = await adapter.getReportPdf(reportId);
 
-      if (!result.found || !result.data) {
+        if (!result.found || !result.data) {
+          return {
+            isError: true,
+            content: [{
+              type: "text" as const,
+              text: JSON.stringify({
+                error: result.error ?? `PDF pre výkaz ${reportId} nebolo nájdené`,
+                _meta: {
+                  source: "ruz",
+                  durationMs: result.durationMs,
+                  timestamp: new Date().toISOString(),
+                },
+              }, null, 2),
+            }],
+          };
+        }
+
         return {
-          isError: true,
           content: [{
             type: "text" as const,
             text: JSON.stringify({
-              error: result.error ?? `PDF pre výkaz ${reportId} nebolo nájdené`,
+              reportId,
+              mimeType: result.data.mimeType,
+              content: result.data.content,
               _meta: {
                 source: "ruz",
-                durationMs: Date.now() - start,
+                durationMs: result.durationMs,
                 timestamp: new Date().toISOString(),
               },
             }, null, 2),
           }],
         };
+      } catch (err) {
+        return {
+          isError: true,
+          content: [{
+            type: "text" as const,
+            text: JSON.stringify({
+              error: err instanceof Error ? err.message : "Neočakávaná chyba pri generovaní PDF",
+              _meta: { source: "ruz", durationMs: Date.now() - start, timestamp: new Date().toISOString() },
+            }, null, 2),
+          }],
+        };
       }
-
-      return {
-        content: [{
-          type: "text" as const,
-          text: JSON.stringify({
-            reportId,
-            mimeType: result.data.mimeType,
-            content: result.data.content,
-            _meta: {
-              source: "ruz",
-              durationMs: result.durationMs,
-              timestamp: new Date().toISOString(),
-            },
-          }, null, 2),
-        }],
-      };
     },
   );
 }

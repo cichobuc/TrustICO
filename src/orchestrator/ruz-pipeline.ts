@@ -93,13 +93,15 @@ export class RuzPipeline {
     }
     allStatements.sort((a, b) => (b.obdobieDo ?? "").localeCompare(a.obdobieDo ?? ""));
 
-    // Filter by year if requested
+    // Filter by year if requested (exact 4-digit year match)
     let filteredStatements = allStatements;
     if (year) {
       const yearStr = String(year);
-      filteredStatements = allStatements.filter(
-        (s) => s.obdobieDo?.startsWith(yearStr) || s.obdobieOd?.startsWith(yearStr),
-      );
+      filteredStatements = allStatements.filter((s) => {
+        const endYear = s.obdobieDo?.substring(0, 4);
+        const startYear = s.obdobieOd?.substring(0, 4);
+        return endYear === yearStr || startYear === yearStr;
+      });
     }
 
     // Take top 5 (already sorted: latest first)

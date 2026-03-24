@@ -25,6 +25,8 @@ export function registerCompanyFinancials(server: McpServer): void {
       year: z.number().optional().describe("Konkrétny rok (default: najnovšia závierka)"),
     },
     async ({ ico, year }) => {
+      const start = Date.now();
+
       const validation = validateICO(ico);
       if (!validation.valid) {
         return {
@@ -33,15 +35,31 @@ export function registerCompanyFinancials(server: McpServer): void {
         };
       }
 
-      const result = await pipeline.getFinancials(validation.normalized, year);
+      try {
+        const result = await pipeline.getFinancials(validation.normalized, year);
 
-      if (!result.success || !result.data) {
+        if (!result.success || !result.data) {
+          return {
+            isError: true,
+            content: [{
+              type: "text" as const,
+              text: JSON.stringify({
+                error: result.error ?? "Nepodarilo sa získať finančné dáta",
+                _meta: {
+                  source: "ruz",
+                  durationMs: result.durationMs,
+                  timestamp: new Date().toISOString(),
+                },
+              }, null, 2),
+            }],
+          };
+        }
+
         return {
-          isError: true,
           content: [{
             type: "text" as const,
             text: JSON.stringify({
-              error: result.error ?? "Nepodarilo sa získať finančné dáta",
+              ...result.data,
               _meta: {
                 source: "ruz",
                 durationMs: result.durationMs,
@@ -50,21 +68,18 @@ export function registerCompanyFinancials(server: McpServer): void {
             }, null, 2),
           }],
         };
+      } catch (err) {
+        return {
+          isError: true,
+          content: [{
+            type: "text" as const,
+            text: JSON.stringify({
+              error: err instanceof Error ? err.message : "Neočakávaná chyba pri získavaní finančných dát",
+              _meta: { source: "ruz", durationMs: Date.now() - start, timestamp: new Date().toISOString() },
+            }, null, 2),
+          }],
+        };
       }
-
-      return {
-        content: [{
-          type: "text" as const,
-          text: JSON.stringify({
-            ...result.data,
-            _meta: {
-              source: "ruz",
-              durationMs: result.durationMs,
-              timestamp: new Date().toISOString(),
-            },
-          }, null, 2),
-        }],
-      };
     },
   );
 }
