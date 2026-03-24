@@ -29,6 +29,8 @@ import type {
 const RUZ_BASE_URL = "https://www.registeruz.sk/cruz-public";
 const SOURCE = "ruz";
 const ZMENENE_OD = "2000-01-01";
+const MAX_PDF_MB = 10;
+const MAX_PDF_BYTES = MAX_PDF_MB * 1024 * 1024;
 
 // Template cache — templates rarely change, cache for 24h
 const templateCache = new LRUCache<RuzTemplateRaw>(50, 86_400_000);
@@ -176,11 +178,18 @@ export class RuzAdapter {
       }
 
       const contentType = resp.headers["content-type"] ?? "application/pdf";
-      // Validate binary response — reject HTML/JSON error pages
       if (contentType.includes("text/html") || contentType.includes("application/json")) {
         return { found: false, error: "Server vrátil neočakávaný content-type namiesto PDF", durationMs: Date.now() - start, source: SOURCE };
       }
-      const base64 = (resp.data as Buffer).toString("base64");
+
+      const buf = resp.data;
+      if (!Buffer.isBuffer(buf) || buf.length === 0) {
+        return { found: false, error: "Prázdna alebo neplatná odpoveď zo servera", durationMs: Date.now() - start, source: SOURCE };
+      }
+      if (buf.length > MAX_PDF_BYTES) {
+        return { found: false, error: `Príloha je príliš veľká (${Math.round(buf.length / 1024 / 1024)}MB, max ${MAX_PDF_MB}MB)`, durationMs: Date.now() - start, source: SOURCE };
+      }
+      const base64 = buf.toString("base64");
 
       return {
         found: true,
@@ -214,11 +223,18 @@ export class RuzAdapter {
       }
 
       const contentType = resp.headers["content-type"] ?? "application/pdf";
-      // Validate binary response — reject HTML/JSON error pages
       if (contentType.includes("text/html") || contentType.includes("application/json")) {
         return { found: false, error: "Server vrátil neočakávaný content-type namiesto PDF", durationMs: Date.now() - start, source: SOURCE };
       }
-      const base64 = (resp.data as Buffer).toString("base64");
+
+      const buf = resp.data;
+      if (!Buffer.isBuffer(buf) || buf.length === 0) {
+        return { found: false, error: "Prázdna alebo neplatná odpoveď zo servera", durationMs: Date.now() - start, source: SOURCE };
+      }
+      if (buf.length > MAX_PDF_BYTES) {
+        return { found: false, error: `PDF je príliš veľké (${Math.round(buf.length / 1024 / 1024)}MB, max ${MAX_PDF_MB}MB)`, durationMs: Date.now() - start, source: SOURCE };
+      }
+      const base64 = buf.toString("base64");
 
       return {
         found: true,

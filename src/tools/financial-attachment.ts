@@ -21,6 +21,20 @@ export function registerFinancialAttachment(server: McpServer): void {
     },
     async ({ attachmentId, nazov, velkost }) => {
       const start = Date.now();
+      const MAX_SIZE_BYTES = 10 * 1024 * 1024; // 10 MB
+
+      if (velkost && velkost > MAX_SIZE_BYTES) {
+        return {
+          isError: true,
+          content: [{
+            type: "text" as const,
+            text: JSON.stringify({
+              error: `Príloha je príliš veľká (${Math.round(velkost / 1024 / 1024)}MB). Maximum je 10MB.`,
+              _meta: { source: "ruz", durationMs: Date.now() - start, timestamp: new Date().toISOString() },
+            }, null, 2),
+          }],
+        };
+      }
 
       try {
         const result = await adapter.getAttachment(attachmentId);

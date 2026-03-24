@@ -7,12 +7,8 @@
 
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { HttpClient } from "../utils/http-client.js";
-import { RpoAdapter } from "../adapters/rpo.adapter.js";
+import { sharedRpoAdapter as rpo } from "./_shared-clients.js";
 import { validateICO } from "../utils/validators.js";
-
-const http = new HttpClient();
-const rpo = new RpoAdapter(http);
 
 export function registerCompanyPeople(server: McpServer): void {
   server.tool(
@@ -24,7 +20,13 @@ export function registerCompanyPeople(server: McpServer): void {
       if (!validation.valid) {
         return {
           isError: true,
-          content: [{ type: "text" as const, text: JSON.stringify({ error: validation.error }) }],
+          content: [{
+            type: "text" as const,
+            text: JSON.stringify({
+              error: validation.error,
+              _meta: { source: "rpo", durationMs: 0, timestamp: new Date().toISOString() },
+            }),
+          }],
         };
       }
 

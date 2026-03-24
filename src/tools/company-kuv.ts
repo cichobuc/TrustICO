@@ -7,12 +7,8 @@
 
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { HttpClient } from "../utils/http-client.js";
-import { RpvsAdapter } from "../adapters/rpvs.adapter.js";
+import { sharedRpvsAdapter as rpvs } from "./_shared-clients.js";
 import { validateICO } from "../utils/validators.js";
-
-const http = new HttpClient();
-const rpvs = new RpvsAdapter(http);
 
 export function registerCompanyKuv(server: McpServer): void {
   server.tool(
@@ -24,7 +20,13 @@ export function registerCompanyKuv(server: McpServer): void {
       if (!validation.valid) {
         return {
           isError: true,
-          content: [{ type: "text" as const, text: JSON.stringify({ error: validation.error }) }],
+          content: [{
+            type: "text" as const,
+            text: JSON.stringify({
+              error: validation.error,
+              _meta: { source: "rpvs", durationMs: 0, timestamp: new Date().toISOString() },
+            }),
+          }],
         };
       }
 
@@ -42,7 +44,17 @@ export function registerCompanyKuv(server: McpServer): void {
       if (result.error) {
         return {
           isError: true,
-          content: [{ type: "text" as const, text: JSON.stringify({ error: result.error, ...response }, null, 2) }],
+          content: [{
+            type: "text" as const,
+            text: JSON.stringify({
+              error: result.error,
+              _meta: {
+                source: "rpvs",
+                durationMs: result.durationMs,
+                timestamp: new Date().toISOString(),
+              },
+            }, null, 2),
+          }],
         };
       }
 

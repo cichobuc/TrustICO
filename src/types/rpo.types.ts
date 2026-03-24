@@ -25,6 +25,7 @@ export interface RpoSearchResult {
   fullNames: Array<{ value: string; validFrom?: string; validTo?: string }>;
   addresses: RpoAddress[];
   establishment: string | null;
+  termination?: string | null;
   sourceRegister?: RpoSourceRegister;
 }
 

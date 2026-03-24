@@ -13,12 +13,8 @@
 
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { HttpClient } from "../utils/http-client.js";
-import { FinsprAdapter } from "../adapters/finspr.adapter.js";
+import { sharedFinsprAdapter as finspr } from "./_shared-clients.js";
 import { validateICO } from "../utils/validators.js";
-
-const http = new HttpClient();
-const finspr = new FinsprAdapter(http);
 
 export function registerCompanyTaxStatus(server: McpServer): void {
   server.tool(
@@ -30,7 +26,13 @@ export function registerCompanyTaxStatus(server: McpServer): void {
       if (!validation.valid) {
         return {
           isError: true,
-          content: [{ type: "text" as const, text: JSON.stringify({ error: validation.error }) }],
+          content: [{
+            type: "text" as const,
+            text: JSON.stringify({
+              error: validation.error,
+              _meta: { source: "finspr", durationMs: 0, timestamp: new Date().toISOString() },
+            }),
+          }],
         };
       }
 
@@ -51,7 +53,17 @@ export function registerCompanyTaxStatus(server: McpServer): void {
       if (result.error) {
         return {
           isError: true,
-          content: [{ type: "text" as const, text: JSON.stringify({ error: result.error, ...response }, null, 2) }],
+          content: [{
+            type: "text" as const,
+            text: JSON.stringify({
+              error: result.error,
+              _meta: {
+                source: "finspr",
+                durationMs: result.durationMs,
+                timestamp: new Date().toISOString(),
+              },
+            }, null, 2),
+          }],
         };
       }
 

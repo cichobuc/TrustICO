@@ -79,8 +79,13 @@ export class IcoResolver {
       const dphResult = await this.finspr.getDphByDic(dic);
 
       if (!dphResult.found || !dphResult.data || dphResult.data.length === 0) {
-        // Fallback: search RPO by DIČ digits (won't match well, but try)
-        return this.resolveByName(dic, start);
+        return {
+          queryType: "dic",
+          results: [],
+          source: "finspr",
+          error: "DIČ nebolo nájdené v registri DPH",
+          durationMs: Date.now() - start,
+        };
       }
 
       const record = dphResult.data[0];

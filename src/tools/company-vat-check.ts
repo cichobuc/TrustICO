@@ -8,11 +8,8 @@
 
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { HttpClient } from "../utils/http-client.js";
-import { ViesAdapter } from "../adapters/vies.adapter.js";
-
-const http = new HttpClient();
-const vies = new ViesAdapter(http);
+import { sharedViesAdapter as vies } from "./_shared-clients.js";
+import { validateICDPH } from "../utils/validators.js";
 
 export function registerCompanyVatCheck(server: McpServer): void {
   server.tool(
@@ -20,7 +17,21 @@ export function registerCompanyVatCheck(server: McpServer): void {
     "Overenie IČ DPH cez EU VIES — validita, názov a adresa firmy. Vstup: IČ DPH (napr. SK2021869234 alebo 2021869234, auto-prefix SK).",
     { vatNumber: z.string().describe("IČ DPH — napr. 'SK2021869234' alebo '2021869234' (auto-prefix SK)") },
     async ({ vatNumber }) => {
-      const result = await vies.checkVat(vatNumber);
+      const validation = validateICDPH(vatNumber);
+      if (!validation.valid) {
+        return {
+          isError: true,
+          content: [{
+            type: "text" as const,
+            text: JSON.stringify({
+              error: validation.error,
+              _meta: { source: "vies", durationMs: 0, timestamp: new Date().toISOString() },
+            }),
+          }],
+        };
+      }
+
+      const result = await vies.checkVat(validation.normalized);
 
       const response = {
         ...(result.data ?? { vatNumber, valid: false }),
@@ -34,7 +45,17 @@ export function registerCompanyVatCheck(server: McpServer): void {
       if (result.error) {
         return {
           isError: true,
-          content: [{ type: "text" as const, text: JSON.stringify({ error: result.error, ...response }, null, 2) }],
+          content: [{
+            type: "text" as const,
+            text: JSON.stringify({
+              error: result.error,
+              _meta: {
+                source: "vies",
+                durationMs: result.durationMs,
+                timestamp: new Date().toISOString(),
+              },
+            }, null, 2),
+          }],
         };
       }
 

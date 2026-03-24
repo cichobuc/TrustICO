@@ -269,10 +269,10 @@ export function extractKlucoveUkazovatele(
       tableName.includes("zisk") || tableName.includes("strát") ||
       tableName.includes("income") || tableName.includes("statement")
     ) {
-      // P&L typically has 2 columns: current period (0), previous period (1)
+      const plIdx = findCurrentPeriodColumnIndex(table);
       for (const row of table.riadky) {
         const name = row.nazov.toLowerCase();
-        const value = row.hodnoty[0] ?? null;
+        const value = row.hodnoty[plIdx] ?? null;
 
         if (
           (name.includes("čistý obrat") || name.includes("net turnover") ||

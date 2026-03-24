@@ -25,7 +25,13 @@ export function registerCompanyFinancials(server: McpServer): void {
       if (!validation.valid) {
         return {
           isError: true,
-          content: [{ type: "text" as const, text: JSON.stringify({ error: validation.error }) }],
+          content: [{
+            type: "text" as const,
+            text: JSON.stringify({
+              error: validation.error,
+              _meta: { source: "ruz", durationMs: 0, timestamp: new Date().toISOString() },
+            }),
+          }],
         };
       }
 

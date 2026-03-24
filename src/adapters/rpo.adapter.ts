@@ -11,6 +11,7 @@
  */
 
 import { HttpClient } from "../utils/http-client.js";
+import { hasBrokenEncoding, fixBrokenUtf8 } from "../utils/encoding.js";
 import type { AdapterResult } from "../types/common.types.js";
 import type {
   RpoSearchResponse,
@@ -156,7 +157,7 @@ export class RpoAdapter {
         nazov,
         ico: s.identifier && s.identifier !== "Neuvedené" ? s.identifier : null,
         vklad: deposit
-          ? { suma: deposit.amount ?? null, splateny: deposit.amount ?? null, mena: deposit.currency?.code ?? null }
+          ? { suma: deposit.amount ?? null, splateny: null, mena: deposit.currency?.code ?? null }
           : null,
         podiel: null,
         od: s.validFrom ?? null,
@@ -250,7 +251,13 @@ export class RpoAdapter {
       throw new Error(`RPO API error: HTTP ${resp.status}`);
     }
 
-    const text = (resp.data as Buffer).toString("utf-8");
+    if (!Buffer.isBuffer(resp.data)) {
+      throw new Error("Expected raw Buffer from RPO API");
+    }
+    let text = resp.data.toString("utf-8");
+    if (hasBrokenEncoding(text)) {
+      text = fixBrokenUtf8(text);
+    }
     return JSON.parse(text) as T;
   }
 }
@@ -278,7 +285,7 @@ function mapSearchResult(r: RpoSearchResult): CompanySearchResult {
     sidlo: currentAddr ? formatAddressString(currentAddr) : "",
     pravnaForma: null, // Search results don't include legalForm
     datumVzniku: r.establishment ?? null,
-    aktivna: true, // Search results from RPO are active (no termination field in search)
+    aktivna: !r.termination,
     rpoId: r.id,
   };
 }
@@ -320,7 +327,7 @@ function extractNameParts(pn: RpoPersonName | undefined): {
   // Extract prefix (titles) from formatted name
   let prefix: string | null = null;
   if (formatted && familyName) {
-    const titleMatch = formatted.match(/^((?:Ing\.|Mgr\.|Bc\.|JUDr\.|MUDr\.|RNDr\.|PhDr\.|doc\.|prof\.|PhD\.|CSc\.)\s*)+/i);
+    const titleMatch = formatted.match(/^((?:Ing\.|Mgr\.|Bc\.|JUDr\.|MUDr\.|RNDr\.|PhDr\.|PaedDr\.|ThDr\.|MVDr\.|DrSc\.|doc\.|prof\.|PhD\.|CSc\.|MBA|Dipl\.)\s*)+/i);
     if (titleMatch) {
       prefix = titleMatch[0].trim();
     }

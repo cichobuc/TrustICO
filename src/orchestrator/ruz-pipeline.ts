@@ -20,6 +20,7 @@ import type {
   RuzUctovnaJednotka,
   RuzZavierkaSummary,
   KlucoveUkazovatele,
+  ParsedTable,
   CompanyFinancialsResult,
   FinancialReportDetail,
 } from "../types/ruz.types.js";
@@ -94,7 +95,7 @@ export class RuzPipeline {
 
     // Filter by year if requested (exact 4-digit year match)
     let filteredStatements = allStatements;
-    if (year) {
+    if (year != null) {
       const yearStr = String(year);
       filteredStatements = allStatements.filter((s) => {
         const endYear = s.obdobieDo?.substring(0, 4);
@@ -153,25 +154,37 @@ export class RuzPipeline {
       mappedStatements.push(this.adapter.mapStatement(stmt, reportSummaries));
     }
 
-    // Step 5: Extract key indicators from the latest statement's report
-    // Reuse cached report data — no duplicate fetch
+    // Step 5: Extract key indicators from ALL reports in the latest statement.
+    // A závierka typically has multiple výkazy (Súvaha aktíva, Súvaha pasíva, VZaS),
+    // each with a different template. Parse ALL to get complete indicators.
     let klucoveUkazovatele = emptyUkazovatele();
     if (mappedStatements.length > 0) {
       const latestStatement = mappedStatements[0];
-      const reportWithData = latestStatement.vykazy.find(
-        (v) => v.idSablony !== null && v.typ !== null,
-      ) ?? latestStatement.vykazy.find((v) => v.idSablony !== null);
+      const reportsWithTemplates = latestStatement.vykazy.filter(
+        (v) => v.idSablony != null,
+      );
 
-      if (reportWithData && reportWithData.idSablony != null) {
-        const cachedReport = reportCache.get(reportWithData.id);
-        if (cachedReport) {
-          const templateResult = await this.adapter.getTemplate(reportWithData.idSablony);
-          if (templateResult.found && templateResult.data) {
-            const parsedTables = parseReport(cachedReport, templateResult.data);
-            if (parsedTables.length > 0) {
-              klucoveUkazovatele = extractKlucoveUkazovatele(parsedTables);
+      if (reportsWithTemplates.length > 0) {
+        // Fetch all templates in parallel (cached — no duplicate fetches)
+        const templateResults = await Promise.allSettled(
+          reportsWithTemplates.map((v) => this.adapter.getTemplate(v.idSablony!)),
+        );
+
+        // Parse each report with its template, collect all parsed tables
+        const allParsedTables: ParsedTable[] = [];
+        for (let i = 0; i < reportsWithTemplates.length; i++) {
+          const tr = templateResults[i];
+          if (tr.status === "fulfilled" && tr.value.found && tr.value.data) {
+            const cachedReport = reportCache.get(reportsWithTemplates[i].id);
+            if (cachedReport) {
+              const parsed = parseReport(cachedReport, tr.value.data);
+              allParsedTables.push(...parsed);
             }
           }
+        }
+
+        if (allParsedTables.length > 0) {
+          klucoveUkazovatele = extractKlucoveUkazovatele(allParsedTables);
         }
       }
     }
@@ -236,12 +249,18 @@ export class RuzPipeline {
       };
     }
 
-    // Step 2: Fetch template (cached)
+    // Step 2: Fetch template (cached) — graceful degradation if unavailable
     const templateResult = await this.adapter.getTemplate(idSablony);
     if (!templateResult.found || !templateResult.data) {
       return {
-        success: false,
-        error: templateResult.error ?? `Šablóna ${idSablony} nebola nájdená`,
+        success: true,
+        data: {
+          reportId,
+          idSablony,
+          nazovSablony: null,
+          tabulky: [],
+          prilohy,
+        },
         durationMs: Date.now() - start,
       };
     }

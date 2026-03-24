@@ -7,7 +7,9 @@ import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 const PORT = parseInt(process.env.PORT || "3000", 10);
 const MCP_API_KEY = process.env.MCP_API_KEY;
 
-const mcpServer = createMcpServer();
+if (!MCP_API_KEY) {
+  console.warn("WARNING: MCP_API_KEY not set — authentication disabled");
+}
 
 const transports = new Map<string, StreamableHTTPServerTransport>();
 
@@ -57,7 +59,14 @@ const httpServer = createServer(async (req, res) => {
       } else if (!sessionId) {
         // New session — parse body to check if it's an initialize request
         const body = await readBody(req);
-        const message = JSON.parse(body);
+        let message: unknown;
+        try {
+          message = JSON.parse(body);
+        } catch {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "Malformed JSON in request body" }));
+          return;
+        }
 
         if (isInitializeRequest(message)) {
           transport = new StreamableHTTPServerTransport({
@@ -72,7 +81,9 @@ const httpServer = createServer(async (req, res) => {
             if (id) transports.delete(id);
           };
 
-          await mcpServer.connect(transport);
+          // Create a fresh McpServer per session to avoid shared state
+          const sessionServer = createMcpServer();
+          await sessionServer.connect(transport);
           await transport.handleRequest(req, res, body);
           return;
         } else {
