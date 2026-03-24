@@ -96,6 +96,11 @@ export class FinsprAdapter {
     return this.search<FinsprDphRow>(FINSPR_SLUGS.DPH, "ico", ico);
   }
 
+  /** DPH registration search by DIČ — used by resolver to find IČO from DIČ. */
+  async getDphByDic(dic: string): Promise<AdapterResult<FinsprDphRow[]>> {
+    return this.search<FinsprDphRow>(FINSPR_SLUGS.DPH, "dic", dic);
+  }
+
   /** Tax debtors search by IČO. */
   async getDlznici(ico: string): Promise<AdapterResult<FinsprDlznikRow[]>> {
     return this.search<FinsprDlznikRow>(FINSPR_SLUGS.DLZNICI, "ico", ico);

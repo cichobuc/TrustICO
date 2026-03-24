@@ -8,6 +8,7 @@
  */
 
 import { RpoAdapter } from "../adapters/rpo.adapter.js";
+import { FinsprAdapter } from "../adapters/finspr.adapter.js";
 import { HttpClient } from "../utils/http-client.js";
 import type { CompanySearchResult } from "../types/rpo.types.js";
 
@@ -16,6 +17,7 @@ export type QueryType = "ico" | "dic" | "name";
 export interface ResolverResult {
   queryType: QueryType;
   results: CompanySearchResult[];
+  source: string;
   error?: string;
   durationMs: number;
 }
@@ -32,11 +34,11 @@ export function detectQueryType(query: string): QueryType {
 
 export class IcoResolver {
   private readonly rpo: RpoAdapter;
-  private readonly http: HttpClient;
+  private readonly finspr: FinsprAdapter;
 
   constructor(http: HttpClient) {
-    this.http = http;
     this.rpo = new RpoAdapter(http);
+    this.finspr = new FinsprAdapter(http);
   }
 
   get rpoAdapter(): RpoAdapter {
@@ -63,6 +65,7 @@ export class IcoResolver {
     return {
       queryType: "ico",
       results: result.data ?? [],
+      source: "rpo",
       error: result.error,
       durationMs: Date.now() - start,
     };
@@ -72,44 +75,41 @@ export class IcoResolver {
     // Strip SK prefix if present
     const dic = raw.toUpperCase().startsWith("SK") ? raw.slice(2) : raw;
 
-    // Try FinSpr DPH registry to find IČO from DIČ
     try {
-      const apiKey = process.env.FINSPR_API_KEY;
-      if (!apiKey) {
+      const dphResult = await this.finspr.getDphByDic(dic);
+
+      if (!dphResult.found || !dphResult.data || dphResult.data.length === 0) {
         // Fallback: search RPO by DIČ digits (won't match well, but try)
         return this.resolveByName(dic, start);
       }
 
-      const url =
-        `https://iz.opendata.financnasprava.sk/api/data/ds_dphs/search?column=dic&search=${encodeURIComponent(dic)}&page=1`;
-      const resp = await this.http.get<FinSprDphResponse>(url, {
-        headers: { key: apiKey },
-        source: "finspr",
-      });
+      const record = dphResult.data[0];
+      const ico = String(record.ico).padStart(8, "0");
 
-      if (resp.status === 200 && resp.data?.records?.length > 0) {
-        const record = resp.data.records[0];
-        const ico = String(record.ico).padStart(8, "0");
-
-        // Now search RPO with this IČO for full data
-        const rpoResult = await this.rpo.search(ico);
+      // Validate extracted IČO before RPO search
+      if (!ICO_REGEX.test(ico)) {
         return {
           queryType: "dic",
-          results: rpoResult.data ?? [],
+          results: [],
+          source: "finspr",
+          error: `Neplatné IČO '${ico}' extrahované z registra DPH`,
           durationMs: Date.now() - start,
         };
       }
 
+      // Now search RPO with this IČO for full data
+      const rpoResult = await this.rpo.search(ico);
       return {
         queryType: "dic",
-        results: [],
-        error: "DIČ nebolo nájdené v registri DPH",
+        results: rpoResult.data ?? [],
+        source: "finspr+rpo",
         durationMs: Date.now() - start,
       };
     } catch (err) {
       return {
         queryType: "dic",
         results: [],
+        source: "finspr",
         error: err instanceof Error ? err.message : String(err),
         durationMs: Date.now() - start,
       };
@@ -121,18 +121,9 @@ export class IcoResolver {
     return {
       queryType: "name",
       results: result.data ?? [],
+      source: "rpo",
       error: result.error,
       durationMs: Date.now() - start,
     };
   }
-}
-
-// FinSpr DPH response shape (minimal)
-interface FinSprDphResponse {
-  records: Array<{
-    ico: number | string;
-    dic: string;
-    nazov: string;
-    [key: string]: unknown;
-  }>;
 }

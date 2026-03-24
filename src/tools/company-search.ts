@@ -25,7 +25,7 @@ export function registerCompanySearch(server: McpServer): void {
         results: result.results,
         count: result.results.length,
         _meta: {
-          source: "rpo",
+          source: result.source,
           durationMs: result.durationMs,
           timestamp: new Date().toISOString(),
         },
