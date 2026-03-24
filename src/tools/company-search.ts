@@ -24,7 +24,6 @@ export function registerCompanySearch(server: McpServer): void {
       const response = {
         results: result.results,
         count: result.results.length,
-        queryType: result.queryType,
         _meta: {
           source: "rpo",
           durationMs: result.durationMs,
