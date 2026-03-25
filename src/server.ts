@@ -14,6 +14,7 @@ import { registerCrzOvTools } from "./tools/crz-ov-tools.js";
 import { registerCompanyEuFunds } from "./tools/company-eu-funds.js";
 import { registerCompanyFullProfile } from "./tools/company-full-profile.js";
 import { registerCompanyCompare } from "./tools/company-compare.js";
+import { registerVerifyCompanyId } from "./tools/verify-company-id.js";
 
 export function createMcpServer(): McpServer {
   const server = new McpServer({
@@ -45,6 +46,9 @@ export function createMcpServer(): McpServer {
   // Phase 3: Full profile orchestration + compare
   registerCompanyFullProfile(server);
   registerCompanyCompare(server);
+
+  // Phase 3b: Verification tools
+  registerVerifyCompanyId(server);
 
   return server;
 }
