@@ -12,6 +12,8 @@ import { registerCompanyVatCheck } from "./tools/company-vat-check.js";
 import { registerCompanyInsolvency } from "./tools/company-insolvency.js";
 import { registerCrzOvTools } from "./tools/crz-ov-tools.js";
 import { registerCompanyEuFunds } from "./tools/company-eu-funds.js";
+import { registerCompanyFullProfile } from "./tools/company-full-profile.js";
+import { registerCompanyCompare } from "./tools/company-compare.js";
 
 export function createMcpServer(): McpServer {
   const server = new McpServer({
@@ -39,6 +41,10 @@ export function createMcpServer(): McpServer {
   registerCompanyInsolvency(server); // registers company_insolvency + company_insolvency_notices + insolvency_detail
   registerCrzOvTools(server); // registers crz_contracts + ov_filing
   registerCompanyEuFunds(server);
+
+  // Phase 3: Full profile orchestration + compare
+  registerCompanyFullProfile(server);
+  registerCompanyCompare(server);
 
   return server;
 }

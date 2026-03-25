@@ -16,6 +16,7 @@ import { DatahubAdapter } from "../adapters/datahub.adapter.js";
 import { ItmsAdapter } from "../adapters/itms.adapter.js";
 import { RuzPipeline } from "../orchestrator/ruz-pipeline.js";
 import { IcoResolver } from "../orchestrator/resolver.js";
+import { FullProfileOrchestrator } from "../orchestrator/full-profile.js";
 
 export const sharedHttpClient = new HttpClient();
 export const sharedRpoAdapter = new RpoAdapter(sharedHttpClient);
@@ -28,3 +29,12 @@ export const sharedDatahubAdapter = new DatahubAdapter(sharedHttpClient);
 export const sharedItmsAdapter = new ItmsAdapter(sharedHttpClient);
 export const sharedRuzPipeline = new RuzPipeline(sharedRuzAdapter);
 export const sharedResolver = new IcoResolver(sharedHttpClient);
+export const sharedFullProfile = new FullProfileOrchestrator(
+  sharedRpoAdapter,
+  sharedRuzPipeline,
+  sharedRpvsAdapter,
+  sharedFinsprAdapter,
+  sharedViesAdapter,
+  sharedReplikAdapter,
+  sharedItmsAdapter,
+);
