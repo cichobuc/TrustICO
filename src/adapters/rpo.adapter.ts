@@ -35,6 +35,9 @@ import type {
 const RPO_BASE_URL = "https://api.statistics.sk/rpo/v1";
 const SOURCE = "rpo";
 
+/** RPO API is notoriously slow — use a higher timeout than the 8s default. */
+const RPO_TIMEOUT_MS = 15_000;
+
 /** Cache TTL: 5 minutes for entity detail. */
 const ENTITY_CACHE_TTL_MS = 5 * 60_000;
 
@@ -279,7 +282,7 @@ export class RpoAdapter {
   // --- Internal: fetch with encoding safety ---
 
   private async fetchJson<T>(url: string): Promise<T> {
-    const resp = await this.http.get<Buffer>(url, { source: SOURCE, raw: true });
+    const resp = await this.http.get<Buffer>(url, { source: SOURCE, raw: true, timeoutMs: RPO_TIMEOUT_MS });
 
     if (resp.status === 404) {
       throw new Error("Not found (404)");
