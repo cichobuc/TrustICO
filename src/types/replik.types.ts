@@ -15,9 +15,6 @@ export type ReplikKonanieRaw = {
   spravcaZnacka?: string;
   datumZaciatku?: string;
   datumUkoncenia?: string;
-  dlznikNazov?: string;
-  dlznikIco?: string;
-  dlznikSidlo?: string;
 };
 
 export type ReplikKonaniaResponse = {

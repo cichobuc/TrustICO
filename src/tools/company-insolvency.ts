@@ -25,7 +25,7 @@ export function registerCompanyInsolvency(server: McpServer): void {
             text: JSON.stringify({
               error: validation.error,
               _meta: { source: "replik", durationMs: 0, timestamp: new Date().toISOString() },
-            }),
+            }, null, 2),
           }],
         };
       }
@@ -75,7 +75,7 @@ export function registerCompanyInsolvency(server: McpServer): void {
             text: JSON.stringify({
               error: validation.error,
               _meta: { source: "replik", durationMs: 0, timestamp: new Date().toISOString() },
-            }),
+            }, null, 2),
           }],
         };
       }
@@ -114,8 +114,22 @@ export function registerCompanyInsolvency(server: McpServer): void {
   server.tool(
     "insolvency_detail",
     "Detail konkrétneho insolvenčného konania z IS REPLIK podľa ID konania (vrátane udalostí, dlžníka, správcu). Vstup: ID konania.",
-    { konanieId: z.string().describe("ID insolvenčného konania (napr. K-123/2024)") },
+    { konanieId: z.string().max(100).describe("ID insolvenčného konania (napr. K-123/2024)") },
     async ({ konanieId }) => {
+      // Basic input validation — prevent excessively long or suspicious input
+      if (konanieId.length === 0 || konanieId.length > 100) {
+        return {
+          isError: true,
+          content: [{
+            type: "text" as const,
+            text: JSON.stringify({
+              error: "Invalid konanieId: must be 1-100 characters",
+              _meta: { source: "replik", durationMs: 0, timestamp: new Date().toISOString() },
+            }, null, 2),
+          }],
+        };
+      }
+
       const result = await replik.getKonanieDetail(konanieId);
 
       if (result.error) {

@@ -13,7 +13,7 @@ export function registerCrzOvTools(server: McpServer): void {
   server.tool(
     "crz_contracts",
     "Detail zmluvy z Centrálneho registra zmlúv (CRZ) podľa interného ID. Vstup: ID zmluvy.",
-    { contractId: z.number().describe("Interné ID zmluvy v CRZ") },
+    { contractId: z.number().int().positive().describe("Interné ID zmluvy v CRZ") },
     async ({ contractId }) => {
       const result = await datahub.getCRZContract(contractId);
 
@@ -63,7 +63,7 @@ export function registerCrzOvTools(server: McpServer): void {
     "ov_filing",
     "Podanie z Obchodného vestníka (OV) podľa interného ID a typu. Typy: or_podanie, konkurz, likvidacia.",
     {
-      id: z.number().describe("Interné ID podania v OV"),
+      id: z.number().int().positive().describe("Interné ID podania v OV"),
       type: z.enum(["or_podanie", "konkurz", "likvidacia"]).describe("Typ podania"),
     },
     async ({ id, type }) => {

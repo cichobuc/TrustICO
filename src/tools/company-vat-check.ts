@@ -26,7 +26,7 @@ export function registerCompanyVatCheck(server: McpServer): void {
             text: JSON.stringify({
               error: validation.error,
               _meta: { source: "vies", durationMs: 0, timestamp: new Date().toISOString() },
-            }),
+            }, null, 2),
           }],
         };
       }

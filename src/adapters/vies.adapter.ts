@@ -5,13 +5,12 @@
  * Quirks (verified 2026-03-24):
  * - Uses REST API, NOT SOAP
  * - Uses DIČ (not IČO)! countryCode + vatNumber (without country prefix)
- * - Auto-prefix "SK" if missing
+ * - Input is pre-validated by tool handler via validateICDPH → always "SK{10digits}"
  */
 
 import { HttpClient } from "../utils/http-client.js";
 import type { AdapterResult } from "../types/common.types.js";
 import type { ViesResponse, CompanyVatCheckResult } from "../types/vies.types.js";
-export type { CompanyVatCheckResult } from "../types/vies.types.js";
 
 const VIES_BASE_URL = "https://ec.europa.eu/taxation_customs/vies/rest-api";
 const SOURCE = "vies";
@@ -21,13 +20,14 @@ export class ViesAdapter {
 
   /**
    * Check VAT number via EU VIES REST API.
-   * Accepts "SK2021869234", "2021869234", or just the 10-digit DIČ.
-   * Auto-prefixes SK if no country code is present.
+   * Expects pre-validated input in format "SK{digits}" from validateICDPH.
    */
   async checkVat(vatNumber: string): Promise<AdapterResult<CompanyVatCheckResult>> {
     const start = Date.now();
     try {
-      const { countryCode, number } = parseVatNumber(vatNumber);
+      // Input is pre-validated by tool handler — always "XX{digits}" format
+      const countryCode = vatNumber.slice(0, 2);
+      const number = vatNumber.slice(2);
 
       const resp = await this.http.post<ViesResponse>(
         `${VIES_BASE_URL}/check-vat-number`,
@@ -45,6 +45,14 @@ export class ViesAdapter {
       }
 
       const data = resp.data;
+      if (!data) {
+        return {
+          found: false,
+          error: "Empty VIES response",
+          durationMs: Date.now() - start,
+          source: SOURCE,
+        };
+      }
 
       if (data.userError && data.userError !== "VALID") {
         return {
@@ -73,27 +81,4 @@ export class ViesAdapter {
       };
     }
   }
-}
-
-/**
- * Parse VAT number into country code and number.
- * "SK2021869234" → { countryCode: "SK", number: "2021869234" }
- * "2021869234"   → { countryCode: "SK", number: "2021869234" }
- */
-function parseVatNumber(input: string): { countryCode: string; number: string } {
-  const trimmed = input.trim().toUpperCase();
-
-  // Check if starts with 2 letter country code
-  const match = trimmed.match(/^([A-Z]{2})(\d+)$/);
-  if (match) {
-    return { countryCode: match[1], number: match[2] };
-  }
-
-  // Pure digits — default to SK
-  if (/^\d+$/.test(trimmed)) {
-    return { countryCode: "SK", number: trimmed };
-  }
-
-  // Fallback: try to use as-is with SK prefix
-  return { countryCode: "SK", number: trimmed };
 }

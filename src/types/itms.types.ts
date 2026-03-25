@@ -5,7 +5,7 @@
  * Quirks:
  * - No direct search by IČO on projects!
  * - /v2/subjekty/{id} works only with internal ID
- * - Best-effort: iterate projects, filter by prijimatel.subjekt.ico
+ * - No feasible way to search by IČO (no server-side filter on any endpoint)
  */
 
 // --- Raw API types ---
@@ -21,32 +21,6 @@ export type ItmsSubjektRaw = {
     mesto?: string;
     psc?: string;
   };
-};
-
-export type ItmsProjektRaw = {
-  id?: number;
-  kod?: string;
-  nazov?: string;
-  stav?: string;
-  prijimatel?: {
-    subjekt?: {
-      id?: number;
-      nazov?: string;
-      ico?: string;
-    };
-  };
-  programoveStrukturyNazov?: string;
-  sumaZazmluvnena?: number;
-  operacnyProgram?: {
-    nazov?: string;
-  };
-};
-
-export type ItmsProjektyPageRaw = {
-  content?: ItmsProjektRaw[];
-  totalElements?: number;
-  totalPages?: number;
-  number?: number;
 };
 
 // --- Mapped output types ---

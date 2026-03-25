@@ -13,12 +13,7 @@ export type FinsprSearchResponse = {
   page: number;
   total_rows: number;
   total_pages: number;
-  results: FinsprSearchRow[];
-};
-
-export type FinsprSearchRow = {
-  id: number;
-  [key: string]: unknown;
+  results: Record<string, unknown>[];
 };
 
 // --- DPH registration (ds_dphs) ---
@@ -81,7 +76,7 @@ export type FinsprIndexRow = {
 // --- Sub-source status for zdrojeStatus ---
 
 export type FinsprSubStatus = {
-  status: "ok" | "error" | "not_found" | "timeout";
+  status: "ok" | "error" | "not_found";
   durationMs: number;
   error?: string;
 };
@@ -113,4 +108,3 @@ export const FINSPR_SLUGS = {
   INDEX: "ds_ids",
 } as const;
 
-export type FinsprSlug = (typeof FINSPR_SLUGS)[keyof typeof FINSPR_SLUGS];

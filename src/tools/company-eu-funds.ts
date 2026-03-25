@@ -24,7 +24,7 @@ export function registerCompanyEuFunds(server: McpServer): void {
             text: JSON.stringify({
               error: validation.error,
               _meta: { source: "itms", durationMs: 0, timestamp: new Date().toISOString() },
-            }),
+            }, null, 2),
           }],
         };
       }

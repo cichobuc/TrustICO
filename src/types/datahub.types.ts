@@ -16,17 +16,11 @@ export type CrzContractRaw = {
   total_amount?: number;
   published_at?: string;
   effective_from?: string;
-  effective_to?: string;
-  departments?: CrzDepartmentRaw[];
-  contractors?: CrzContractorRaw[];
+  departments?: CrzPartyRaw[];
+  contractors?: CrzPartyRaw[];
 };
 
-export type CrzDepartmentRaw = {
-  name?: string;
-  cin?: string;
-};
-
-export type CrzContractorRaw = {
+export type CrzPartyRaw = {
   name?: string;
   cin?: string;
 };
@@ -45,7 +39,6 @@ export type CrzContractResult = {
 
 export type OvFilingRaw = {
   id?: number;
-  bulletin_issue_id?: number;
   raw_issue_id?: string;
   published_at?: string;
   corporate_body_name?: string;

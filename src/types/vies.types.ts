@@ -19,18 +19,6 @@ export type ViesResponse = {
   requestIdentifier?: string;
   countryCode?: string;
   vatNumber?: string;
-  viesApproximate?: {
-    name?: string;
-    street?: string;
-    postalCode?: string;
-    city?: string;
-    companyType?: string;
-    matchName?: number;
-    matchStreet?: number;
-    matchPostalCode?: number;
-    matchCity?: number;
-    matchCompanyType?: number;
-  };
 };
 
 // --- Mapped output type ---

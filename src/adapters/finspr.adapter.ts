@@ -147,16 +147,16 @@ export class FinsprAdapter {
     // Build zdrojeStatus (TOOLS-SPEC names, not internal slug names)
     const zdrojeStatus: Record<string, FinsprSubStatus> = {
       dph_registracia: toSubStatus(dph),
-      dph_vymazani: toSubStatus(vymazanie),
+      dph_vymazanie: toSubStatus(vymazanie),
       dph_zrusenie: toSubStatus(zrusenie),
       index_spolahlivosti: toSubStatus(index),
       danovi_dlznici: toSubStatus(dlznici),
     };
 
     // DPH registration
-    const dphRow = dph?.data?.[0] as FinsprDphRow | undefined;
-    const zrusenieRow = zrusenie?.data?.[0] as FinsprDphZrusenieRow | undefined;
-    const vymazanieRow = vymazanie?.data?.[0] as FinsprDphVymazanieRow | undefined;
+    const dphRow = dph?.data?.[0];
+    const zrusenieRow = zrusenie?.data?.[0];
+    const vymazanieRow = vymazanie?.data?.[0];
 
     // Reliability index
     const indexRow = index?.data?.[0] as FinsprIndexRow | undefined;
@@ -179,8 +179,9 @@ export class FinsprAdapter {
       zdrojeStatus,
     };
 
+    const anySucceeded = Object.values(zdrojeStatus).some((s) => s.status === "ok");
     return {
-      found: true,
+      found: anySucceeded,
       data: result,
       durationMs: Date.now() - start,
       source: SOURCE,

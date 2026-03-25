@@ -37,7 +37,7 @@ export class DatahubAdapter {
       if (resp.status === 404) {
         return {
           found: false,
-          data: undefined,
+
           durationMs: Date.now() - start,
           source: `${SOURCE}-crz`,
         };
@@ -97,7 +97,7 @@ export class DatahubAdapter {
       if (resp.status === 404) {
         return {
           found: false,
-          data: undefined,
+
           durationMs: Date.now() - start,
           source: `${SOURCE}-ov`,
         };

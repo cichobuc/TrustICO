@@ -36,8 +36,18 @@ export class RpvsAdapter {
   async getKuv(ico: string): Promise<AdapterResult<CompanyKuvResult>> {
     const start = Date.now();
     try {
-      const filter = `PartneriVerejnehoSektora/any(p: p/Ico eq '${ico}')`;
-      const expand = "KonecniUzivateliaVyhod,OpravneneOsoby,PartneriVerejnehoSektora";
+      // Validate ICO is pure digits to prevent OData injection
+      if (!/^\d{1,8}$/.test(ico)) {
+        return {
+          found: false,
+          error: `Invalid IČO format for RPVS query: ${ico}`,
+          durationMs: Date.now() - start,
+          source: SOURCE,
+        };
+      }
+
+      const filter = encodeURIComponent(`PartneriVerejnehoSektora/any(p: p/Ico eq '${ico}')`);
+      const expand = encodeURIComponent("KonecniUzivateliaVyhod,OpravneneOsoby,PartneriVerejnehoSektora");
       const url = `${RPVS_BASE_URL}/Partneri?$filter=${filter}&$expand=${expand}`;
 
       const resp = await this.http.get<RpvsODataResponse<RpvsPartner>>(url, {
