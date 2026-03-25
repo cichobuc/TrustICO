@@ -6,13 +6,11 @@
  * 2. If that yields < 20 chars → PDF is likely scanned → run OCR via tesseract.js
  * 3. OCR renders each page to canvas via pdfjs-dist, then recognizes text
  *
- * Used by financial_attachment and financial_report_pdf tools.
+ * Heavy deps (pdfjs-dist, canvas, tesseract.js) are dynamically imported
+ * only when OCR is needed — no cold start penalty for text PDFs.
  */
 
 import { PDFParse } from "pdf-parse";
-import * as pdfjs from "pdfjs-dist/legacy/build/pdf.mjs";
-import { createCanvas } from "canvas";
-import Tesseract from "tesseract.js";
 
 /** Max characters to return — keeps MCP response reasonable. */
 const MAX_TEXT_LENGTH = 50_000;
@@ -44,14 +42,26 @@ export interface PdfExtractResult {
   error?: string;
 }
 
+/** Clearable timeout — prevents timer leaks in Promise.race. */
+function createTimeout(ms: number, reason: string): { promise: Promise<never>; clear: () => void } {
+  let timer: ReturnType<typeof setTimeout>;
+  const promise = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(reason)), ms);
+  });
+  return { promise, clear: () => clearTimeout(timer) };
+}
+
 /**
  * Extract text from a base64-encoded PDF.
  * Tries native text first, falls back to OCR for scanned documents.
  * Never throws.
  */
 export async function extractTextFromPdf(base64: string): Promise<PdfExtractResult> {
+  // Decode base64 once — shared between native extraction and OCR
+  const buf = Buffer.from(base64, "base64");
+
   // Phase 1: Try native text extraction (fast)
-  const textResult = await extractNativeText(base64);
+  const textResult = await extractNativeText(buf);
 
   // If we got enough text, return it
   if (!textResult.error && textResult.text.length > 0) {
@@ -59,23 +69,25 @@ export async function extractTextFromPdf(base64: string): Promise<PdfExtractResu
   }
 
   // Phase 2: Scanned PDF → OCR fallback
-  const ocrResult = await extractOcrText(base64, textResult.pages);
+  const ocrResult = await extractOcrText(buf, textResult.pages);
   return ocrResult;
 }
 
 // --- Phase 1: Native text extraction ---
 
-async function extractNativeText(base64: string): Promise<Omit<PdfExtractResult, "method">> {
+async function extractNativeText(buf: Buffer): Promise<Omit<PdfExtractResult, "method">> {
   let parser: PDFParse | null = null;
 
   try {
-    const buf = Buffer.from(base64, "base64");
     parser = new PDFParse({ data: buf });
 
-    const textResult = await Promise.race([
-      parser.getText(),
-      rejectAfter(TEXT_EXTRACTION_TIMEOUT_MS, "TEXT_TIMEOUT"),
-    ]);
+    const { promise: timeoutPromise, clear: clearTimer } = createTimeout(TEXT_EXTRACTION_TIMEOUT_MS, "TEXT_TIMEOUT");
+    let textResult: { text?: string; total?: number };
+    try {
+      textResult = await Promise.race([parser.getText(), timeoutPromise]);
+    } finally {
+      clearTimer();
+    }
 
     const rawText = (textResult.text ?? "").trim();
     const pages = textResult.total ?? 0;
@@ -115,49 +127,55 @@ async function extractNativeText(base64: string): Promise<Omit<PdfExtractResult,
   }
 }
 
-// --- Phase 2: OCR fallback ---
+// --- Phase 2: OCR fallback (heavy deps loaded dynamically) ---
 
-async function extractOcrText(base64: string, knownPages: number): Promise<PdfExtractResult> {
-  let doc: pdfjs.PDFDocumentProxy | null = null;
+async function extractOcrText(buf: Buffer, knownPages: number): Promise<PdfExtractResult> {
+  // Dynamic imports — only loaded when OCR is actually needed
+  const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+  const { createCanvas } = await import("canvas");
+  const Tesseract = (await import("tesseract.js")).default;
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let doc: any = null;
   let worker: Tesseract.Worker | null = null;
   const ocrStart = Date.now();
 
   try {
-    const buf = Buffer.from(base64, "base64");
-    const data = new Uint8Array(buf);
+    const data = new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength);
     doc = await pdfjs.getDocument({ data, verbosity: 0 }).promise;
 
     const totalPages = doc.numPages;
     const pagesToOcr = Math.min(totalPages, OCR_MAX_PAGES);
 
     // Create tesseract worker (Slovak + Czech + English)
-    // Uses langPath from TESSERACT_LANG_PATH env if set (for Docker/offline)
     const langPath = process.env.TESSERACT_LANG_PATH ?? undefined;
-    worker = await Promise.race([
-      Tesseract.createWorker("slk+ces+eng", undefined, langPath ? { langPath } : undefined),
-      rejectAfter(30_000, "OCR_INIT_TIMEOUT"),
-    ]);
+    const { promise: initTimeout, clear: clearInit } = createTimeout(30_000, "OCR_INIT_TIMEOUT");
+    try {
+      worker = await Promise.race([
+        Tesseract.createWorker("slk+ces+eng", undefined, langPath ? { langPath } : undefined),
+        initTimeout,
+      ]);
+    } finally {
+      clearInit();
+    }
 
     const pageTexts: string[] = [];
     let totalTextLength = 0;
     let reachedLimit = false;
 
+    // Reusable canvas — resized each iteration to avoid native memory leaks
+    let canvas = createCanvas(1, 1);
+
     for (let i = 1; i <= pagesToOcr; i++) {
       if (reachedLimit) break;
-
-      // Check total OCR timeout
-      if (Date.now() - ocrStart > OCR_TOTAL_TIMEOUT_MS) {
-        break;
-      }
+      if (Date.now() - ocrStart > OCR_TOTAL_TIMEOUT_MS) break;
 
       const page = await doc.getPage(i);
       const viewport = page.getViewport({ scale: OCR_RENDER_DPI / 72 });
 
-      // Render page to canvas
-      const canvas = createCanvas(
-        Math.round(viewport.width),
-        Math.round(viewport.height),
-      );
+      // Resize canvas instead of creating new one
+      canvas.width = Math.round(viewport.width);
+      canvas.height = Math.round(viewport.height);
       const ctx = canvas.getContext("2d");
 
       // pdfjs v5 requires `canvas` in RenderParameters alongside canvasContext
@@ -168,24 +186,30 @@ async function extractOcrText(base64: string, knownPages: number): Promise<PdfEx
         viewport,
       }).promise;
 
-      // OCR the rendered image with per-page timeout
-      const pngBuffer = canvas.toBuffer("image/png");
+      // OCR the rendered image — JPEG is faster and smaller than PNG
+      const imgBuffer = canvas.toBuffer("image/jpeg");
 
-      const ocrResult = await Promise.race([
-        worker.recognize(pngBuffer),
-        rejectAfter(OCR_PER_PAGE_TIMEOUT_MS, "OCR_PAGE_TIMEOUT"),
-      ]);
+      const { promise: pageTimeout, clear: clearPage } = createTimeout(OCR_PER_PAGE_TIMEOUT_MS, "OCR_PAGE_TIMEOUT");
+      let ocrResult: Tesseract.RecognizeResult;
+      try {
+        ocrResult = await Promise.race([worker.recognize(imgBuffer), pageTimeout]);
+      } finally {
+        clearPage();
+      }
 
       const pageText = (ocrResult.data.text ?? "").trim();
       if (pageText) {
         pageTexts.push(pageText);
         totalTextLength += pageText.length;
-
         if (totalTextLength > MAX_TEXT_LENGTH) {
           reachedLimit = true;
         }
       }
     }
+
+    // Release canvas native memory
+    canvas.width = 0;
+    canvas.height = 0;
 
     const fullText = pageTexts.join("\n\n");
     const nonWhitespace = fullText.replace(/\s/g, "").length;
@@ -246,10 +270,4 @@ async function extractOcrText(base64: string, knownPages: number): Promise<PdfEx
       try { await doc.destroy(); } catch { /* ignore */ }
     }
   }
-}
-
-function rejectAfter(ms: number, reason: string): Promise<never> {
-  return new Promise((_, reject) =>
-    setTimeout(() => reject(new Error(reason)), ms),
-  );
 }

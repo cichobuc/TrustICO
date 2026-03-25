@@ -7,7 +7,8 @@
  */
 
 import { createClientAsync, type Client } from "soap";
-import { SOURCE_RATE_LIMITS, type RateLimitConfig } from "../types/common.types.js";
+import { SOURCE_RATE_LIMITS } from "../types/common.types.js";
+import { TokenBucket } from "./rate-limiter.js";
 
 const REPLIK_WSDL_BASE = "https://replik-ws.justice.sk/replik";
 
@@ -17,33 +18,6 @@ const OZNAM_WSDL = `${REPLIK_WSDL_BASE}/oznamService?wsdl`;
 const SOAP_TIMEOUT_MS = 8_000;
 const SOAP_RETRIES = 1;
 const BACKOFF_BASE_MS = 500;
-
-// --- Token bucket rate limiter (shared pattern with HttpClient) ---
-
-class TokenBucket {
-  private tokens: number;
-  private lastRefill: number;
-  constructor(private readonly config: RateLimitConfig) {
-    this.tokens = config.maxTokens;
-    this.lastRefill = Date.now();
-  }
-  async acquire(): Promise<void> {
-    this.refill();
-    if (this.tokens >= 1) { this.tokens--; return; }
-    const deficit = 1 - this.tokens;
-    const waitMs = (deficit / this.config.maxTokens) * this.config.intervalMs;
-    await new Promise((resolve) => setTimeout(resolve, waitMs));
-    this.refill();
-    this.tokens = Math.max(0, this.tokens - 1);
-  }
-  private refill(): void {
-    const now = Date.now();
-    const elapsed = now - this.lastRefill;
-    const newTokens = (elapsed / this.config.intervalMs) * this.config.maxTokens;
-    this.tokens = Math.min(this.config.maxTokens, this.tokens + newTokens);
-    this.lastRefill = now;
-  }
-}
 
 const replikBucket = new TokenBucket(
   SOURCE_RATE_LIMITS["replik"] ?? { maxTokens: 20, intervalMs: 60_000 },
