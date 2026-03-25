@@ -141,7 +141,7 @@ IČO → /api/uctovne-jednotky?zmenene-od=2000-01-01&ico={ico}
 **PDF prílohy (na požiadanie):**
 ```
 /domain/financialreport/attachment/{attachmentId}
-→ binary PDF/TIFF → base64 → Claude OCR
+→ binary PDF/TIFF → base64 → Claude vizuálne čítanie
 ```
 
 ---

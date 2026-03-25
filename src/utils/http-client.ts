@@ -5,46 +5,9 @@
 import {
   type HttpRequestOptions,
   type HttpResponse,
-  type RateLimitConfig,
   SOURCE_RATE_LIMITS,
 } from "../types/common.types.js";
-
-// --- Token Bucket Rate Limiter ---
-
-class TokenBucket {
-  private tokens: number;
-  private lastRefill: number;
-  private readonly maxTokens: number;
-  private readonly intervalMs: number;
-
-  constructor(config: RateLimitConfig) {
-    this.maxTokens = config.maxTokens;
-    this.intervalMs = config.intervalMs;
-    this.tokens = config.maxTokens;
-    this.lastRefill = Date.now();
-  }
-
-  async acquire(): Promise<void> {
-    this.refill();
-    if (this.tokens > 0) {
-      this.tokens--;
-      return;
-    }
-    // Wait until next token is available
-    const waitMs = this.intervalMs / this.maxTokens;
-    await new Promise((resolve) => setTimeout(resolve, waitMs));
-    this.refill();
-    this.tokens--;
-  }
-
-  private refill(): void {
-    const now = Date.now();
-    const elapsed = now - this.lastRefill;
-    const newTokens = (elapsed / this.intervalMs) * this.maxTokens;
-    this.tokens = Math.min(this.maxTokens, this.tokens + newTokens);
-    this.lastRefill = now;
-  }
-}
+import { TokenBucket } from "./rate-limiter.js";
 
 // --- HTTP Client ---
 
@@ -143,7 +106,13 @@ export class HttpClient {
           if (contentType.includes("/json") || contentType.includes("+json")) {
             data = (await response.json()) as T;
           } else {
-            data = (await response.text()) as T;
+            // Some APIs return JSON with non-JSON content-type — try parsing
+            const text = await response.text();
+            try {
+              data = JSON.parse(text) as T;
+            } catch {
+              data = text as T;
+            }
           }
         }
 

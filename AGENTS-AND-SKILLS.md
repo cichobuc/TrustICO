@@ -176,7 +176,7 @@ Sú to system prompty / agent instructions.
 **Workflow:**
 1. `company_financials` → zoznam závierok
 2. `financial_report_detail` → najnovší výkaz (Súvaha + VZaS)
-3. Na požiadanie: `financial_attachment` → PDF poznámky (OCR scan)
+3. Na požiadanie: `financial_attachment` → PDF poznámky (Claude číta vizuálne)
 4. Na požiadanie: staršie závierky pre trend analýzu
 5. Výpočet: ROA, ROE, Current Ratio, Debt Ratio, EBITDA marža
 

@@ -7,7 +7,8 @@
  */
 
 import { createClientAsync, type Client } from "soap";
-import { SOURCE_RATE_LIMITS, type RateLimitConfig } from "../types/common.types.js";
+import { SOURCE_RATE_LIMITS } from "../types/common.types.js";
+import { TokenBucket } from "./rate-limiter.js";
 
 const REPLIK_WSDL_BASE = "https://replik-ws.justice.sk/replik";
 
@@ -17,32 +18,6 @@ const OZNAM_WSDL = `${REPLIK_WSDL_BASE}/oznamService?wsdl`;
 const SOAP_TIMEOUT_MS = 8_000;
 const SOAP_RETRIES = 1;
 const BACKOFF_BASE_MS = 500;
-
-// --- Token bucket rate limiter (shared pattern with HttpClient) ---
-
-class TokenBucket {
-  private tokens: number;
-  private lastRefill: number;
-  constructor(private readonly config: RateLimitConfig) {
-    this.tokens = config.maxTokens;
-    this.lastRefill = Date.now();
-  }
-  async acquire(): Promise<void> {
-    this.refill();
-    if (this.tokens > 0) { this.tokens--; return; }
-    const waitMs = this.config.intervalMs / this.config.maxTokens;
-    await new Promise((resolve) => setTimeout(resolve, waitMs));
-    this.refill();
-    this.tokens = Math.max(0, this.tokens - 1);
-  }
-  private refill(): void {
-    const now = Date.now();
-    const elapsed = now - this.lastRefill;
-    const newTokens = (elapsed / this.config.intervalMs) * this.config.maxTokens;
-    this.tokens = Math.min(this.config.maxTokens, this.tokens + newTokens);
-    this.lastRefill = now;
-  }
-}
 
 const replikBucket = new TokenBucket(
   SOURCE_RATE_LIMITS["replik"] ?? { maxTokens: 20, intervalMs: 60_000 },
@@ -66,12 +41,14 @@ function getClient(wsdlUrl: string): Promise<Client> {
   return p;
 }
 
-// --- Timeout helper ---
+// --- Clearable timeout helper (prevents timer leaks in Promise.race) ---
 
-function timeoutPromise(ms: number): Promise<never> {
-  return new Promise((_, reject) =>
-    setTimeout(() => reject(new Error(`SOAP request timed out after ${ms}ms`)), ms),
-  );
+function createTimeout(ms: number, reason: string): { promise: Promise<never>; clear: () => void } {
+  let timer: ReturnType<typeof setTimeout>;
+  const promise = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(reason)), ms);
+  });
+  return { promise, clear: () => clearTimeout(timer) };
 }
 
 // --- Core SOAP call with timeout, rate limiting, and retry ---
@@ -99,8 +76,13 @@ async function callService<T>(
       }
 
       const callPromise = (client as Record<string, (...a: unknown[]) => Promise<unknown[]>>)[methodName](args);
-      const [result] = await Promise.race([callPromise, timeoutPromise(SOAP_TIMEOUT_MS)]);
-      return result as T;
+      const { promise: timeout, clear: clearTimer } = createTimeout(SOAP_TIMEOUT_MS, `SOAP request timed out after ${SOAP_TIMEOUT_MS}ms`);
+      try {
+        const [result] = await Promise.race([callPromise, timeout]);
+        return result as T;
+      } finally {
+        clearTimer();
+      }
     } catch (err) {
       lastError = err instanceof Error ? err : new Error(String(err));
       // Non-retryable: operation not found

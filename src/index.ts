@@ -15,6 +15,26 @@ if (!MCP_API_KEY) {
 }
 
 const transports = new Map<string, StreamableHTTPServerTransport>();
+const sessionLastActivity = new Map<string, number>();
+
+/** Session TTL — clean up abandoned sessions after 30 minutes of inactivity. */
+const SESSION_TTL_MS = 30 * 60 * 1000;
+
+/** Periodic cleanup of stale sessions (runs every 5 minutes). */
+setInterval(() => {
+  const now = Date.now();
+  for (const [id, lastActivity] of sessionLastActivity) {
+    if (now - lastActivity > SESSION_TTL_MS) {
+      const transport = transports.get(id);
+      if (transport) {
+        try { transport.close(); } catch { /* ignore */ }
+      }
+      transports.delete(id);
+      sessionLastActivity.delete(id);
+      logger.info("Cleaned up stale session", { sessionId: id });
+    }
+  }
+}, 5 * 60 * 1000).unref();
 
 /** Verify Bearer token from Authorization header. */
 function authenticate(
@@ -89,6 +109,7 @@ const httpServer = createServer(async (req, res) => {
 
       if (sessionId && transports.has(sessionId)) {
         transport = transports.get(sessionId)!;
+        sessionLastActivity.set(sessionId, Date.now());
       } else if (!sessionId) {
         // New session — parse body to check if it's an initialize request
         const body = await readBody(req);
@@ -106,12 +127,16 @@ const httpServer = createServer(async (req, res) => {
             sessionIdGenerator: () => crypto.randomUUID(),
             onsessioninitialized: (id) => {
               transports.set(id, transport);
+              sessionLastActivity.set(id, Date.now());
             },
           });
 
           transport.onclose = () => {
             const id = [...transports.entries()].find(([, t]) => t === transport)?.[0];
-            if (id) transports.delete(id);
+            if (id) {
+              transports.delete(id);
+              sessionLastActivity.delete(id);
+            }
           };
 
           // Create a fresh McpServer per session to avoid shared state
