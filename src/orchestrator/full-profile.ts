@@ -176,7 +176,20 @@ export class FullProfileOrchestrator {
       ? adapterToStatus(ruzSettled, { found: ruzResult.success, durationMs: ruzResult.durationMs, error: ruzResult.error })
       : settledToStatus(ruzSettled);
     zdrojeStatus.rpvs = adapterToStatus(rpvsSettled, rpvsResult);
-    zdrojeStatus.finspr = adapterToStatus(finsprSettled, finsprResult);
+
+    // FinSpr: expose granular sub-source keys per TOOLS-SPEC
+    if (finsprResult?.data?.zdrojeStatus) {
+      const fs = finsprResult.data.zdrojeStatus;
+      zdrojeStatus.finspr_dlznici = fs.danovi_dlznici ?? { status: "error", durationMs: 0 };
+      zdrojeStatus.finspr_dph = fs.dph_registracia ?? { status: "error", durationMs: 0 };
+      zdrojeStatus.finspr_index = fs.index_spolahlivosti ?? { status: "error", durationMs: 0 };
+    } else {
+      const fallback = adapterToStatus(finsprSettled, finsprResult);
+      zdrojeStatus.finspr_dlznici = fallback;
+      zdrojeStatus.finspr_dph = fallback;
+      zdrojeStatus.finspr_index = fallback;
+    }
+
     zdrojeStatus.replik = adapterToStatus(replikSettled, replikResult);
     zdrojeStatus.itms = adapterToStatus(itmsSettled, itmsResult);
 
