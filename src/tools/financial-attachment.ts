@@ -20,16 +20,20 @@ function metaJson(source: string, durationMs: number, extra?: Record<string, unk
 }
 
 function buildTextBlock(extract: PdfExtractResult): { type: "text"; text: string } {
-  if (extract.error || !extract.text) {
+  if (!extract.text) {
     return {
       type: "text" as const,
       text: `[PDF text extraction]\n${extract.error ?? "Žiadny text v PDF"}`,
     };
   }
 
-  const parts: string[] = [`[Extrahovaný text z PDF — ${extract.pages} strán`];
+  const methodLabel = extract.method === "ocr" ? "OCR rozpoznávanie" : "extrakcia textu";
+  const parts: string[] = [`[${methodLabel} — ${extract.pages} strán`];
   if (extract.truncated) {
     parts.push(`, skrátené na 50 000 z ${extract.totalTextLength} znakov`);
+  }
+  if (extract.error) {
+    parts.push(` — poznámka: ${extract.error}`);
   }
   parts.push("]\n\n");
   parts.push(extract.text);
@@ -76,7 +80,7 @@ export function registerFinancialAttachment(server: McpServer): void {
         // Extract text from PDF (skip for non-PDF attachments)
         const extract = isPdf
           ? await extractTextFromPdf(result.data.content)
-          : { text: "", pages: 0, truncated: false, totalTextLength: 0, error: "Príloha nie je PDF — extrakcia textu nie je dostupná" };
+          : { text: "", pages: 0, truncated: false, totalTextLength: 0, method: "none" as const, error: "Príloha nie je PDF — extrakcia textu nie je dostupná" };
 
         return {
           content: [
@@ -88,6 +92,7 @@ export function registerFinancialAttachment(server: McpServer): void {
                 mimeType: result.data.mimeType,
                 velkost: velkost ?? null,
                 textExtraction: {
+                  method: extract.method,
                   pages: extract.pages,
                   truncated: extract.truncated,
                   totalTextLength: extract.totalTextLength,
@@ -142,6 +147,7 @@ export function registerFinancialAttachment(server: McpServer): void {
                 reportId,
                 mimeType: result.data.mimeType,
                 textExtraction: {
+                  method: extract.method,
                   pages: extract.pages,
                   truncated: extract.truncated,
                   totalTextLength: extract.totalTextLength,
