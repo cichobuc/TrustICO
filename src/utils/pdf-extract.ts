@@ -1,10 +1,13 @@
 /**
  * PDF text extraction utility.
  *
- * Strategy:
- * 1. Try native text extraction via pdf-parse (fast, works for text PDFs)
- * 2. If that yields < 20 chars → PDF is likely scanned → run OCR via tesseract.js
- * 3. OCR renders each page to canvas via pdfjs-dist, then recognizes text
+ * Strategy (3 phases):
+ * 1. Native text extraction via pdf-parse (fast, works for text PDFs)
+ * 2. If that yields < 20 chars → return PDF as-is for Claude to read visually
+ * 3. Only if `ocr: true` is explicitly requested → run OCR via tesseract.js
+ *
+ * Phase 2 is the default for scanned PDFs — Claude can read them natively
+ * as embedded resources. OCR is opt-in for cases where structured text is needed.
  *
  * Heavy deps (pdfjs-dist, canvas, tesseract.js) are dynamically imported
  * only when OCR is needed — no cold start penalty for text PDFs.
@@ -54,12 +57,23 @@ function createTimeout(ms: number, reason: string): { promise: Promise<never>; c
   return { promise, clear: () => clearTimeout(timer) };
 }
 
+export interface PdfExtractOptions {
+  /** Run OCR for scanned PDFs. Default: false (let Claude read visually). */
+  ocr?: boolean;
+}
+
 /**
  * Extract text from a base64-encoded PDF.
- * Tries native text first, falls back to OCR for scanned documents.
+ *
+ * Phase 1: Native text extraction (always runs, fast).
+ * Phase 2: If no text found → returns "none" so Claude reads the PDF visually.
+ * Phase 3: If `ocr: true` → runs OCR via tesseract.js as last resort.
+ *
  * Never throws.
  */
-export async function extractTextFromPdf(base64: string): Promise<PdfExtractResult> {
+export async function extractTextFromPdf(base64: string, options: PdfExtractOptions = {}): Promise<PdfExtractResult> {
+  const { ocr = false } = options;
+
   // Guard against excessively large inputs
   if (base64.length > MAX_BASE64_LENGTH) {
     return {
@@ -83,7 +97,19 @@ export async function extractTextFromPdf(base64: string): Promise<PdfExtractResu
     return { ...textResult, method: "text" };
   }
 
-  // Phase 2: Scanned PDF → OCR fallback
+  // Phase 2: No text found → by default, let Claude read the PDF visually
+  if (!ocr) {
+    return {
+      text: "",
+      pages: textResult.pages,
+      truncated: false,
+      totalTextLength: 0,
+      method: "none",
+      error: "PDF neobsahuje kopírovateľný text (pravdepodobne sken). Claude ho prečíta vizuálne z priloženého PDF.",
+    };
+  }
+
+  // Phase 3: OCR explicitly requested
   const ocrResult = await extractOcrText(buf, textResult.pages);
   return ocrResult;
 }
