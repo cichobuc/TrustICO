@@ -12,6 +12,7 @@
 
 import { HttpClient } from "../utils/http-client.js";
 import { hasBrokenEncoding, fixBrokenUtf8 } from "../utils/encoding.js";
+import { LRUCache } from "../utils/cache.js";
 import type { AdapterResult } from "../types/common.types.js";
 import type {
   RpoSearchResponse,
@@ -34,7 +35,15 @@ import type {
 const RPO_BASE_URL = "https://api.statistics.sk/rpo/v1";
 const SOURCE = "rpo";
 
+/** Cache TTL: 5 minutes for entity detail. */
+const ENTITY_CACHE_TTL_MS = 5 * 60_000;
+
 export class RpoAdapter {
+  /** Cache keyed by `${rpoId}:${historical}` */
+  private readonly entityCache = new LRUCache<RpoEntityDetail>(50, ENTITY_CACHE_TTL_MS);
+  /** Cache keyed by IČO → rpoId (from search) */
+  private readonly icoToRpoId = new LRUCache<number>(200, ENTITY_CACHE_TTL_MS);
+
   constructor(private readonly http: HttpClient) {}
 
   /** Search RPO by IČO (identifier). */
@@ -84,18 +93,32 @@ export class RpoAdapter {
     }
   }
 
-  /** Get full entity detail by RPO internal ID. */
-  async getEntity(rpoId: number): Promise<AdapterResult<RpoEntityDetail>> {
+  /**
+   * Get full entity detail by RPO internal ID.
+   * @param historical If true, includes historical data (names, addresses, etc.). Default false.
+   */
+  async getEntity(
+    rpoId: number,
+    historical = false,
+  ): Promise<AdapterResult<RpoEntityDetail>> {
     const start = Date.now();
+
+    const cacheKey = `${rpoId}:${historical}`;
+    const cached = this.entityCache.get(cacheKey);
+    if (cached) {
+      return { found: true, data: cached, durationMs: Date.now() - start, source: SOURCE };
+    }
+
     try {
       const url =
-        `${RPO_BASE_URL}/entity/${rpoId}?showHistoricalData=true&showOrganizationUnits=true`;
+        `${RPO_BASE_URL}/entity/${rpoId}?showHistoricalData=${historical}&showOrganizationUnits=true`;
       const data = await this.fetchJson<RpoEntityDetail>(url);
 
       if (!data || !data.id) {
         return { found: false, durationMs: Date.now() - start, source: SOURCE };
       }
 
+      this.entityCache.set(cacheKey, data);
       return { found: true, data, durationMs: Date.now() - start, source: SOURCE };
     } catch (err) {
       return {
@@ -107,9 +130,22 @@ export class RpoAdapter {
     }
   }
 
-  /** Search by IČO → get first match → fetch full entity detail. */
-  async getEntityByIco(ico: string): Promise<AdapterResult<RpoEntityDetail>> {
+  /**
+   * Search by IČO → get first match → fetch full entity detail.
+   * @param historical If true, includes historical data. Default false.
+   */
+  async getEntityByIco(
+    ico: string,
+    historical = false,
+  ): Promise<AdapterResult<RpoEntityDetail>> {
     const start = Date.now();
+
+    // Check if we already know the rpoId for this IČO
+    const cachedRpoId = this.icoToRpoId.get(ico);
+    if (cachedRpoId !== undefined) {
+      const entityResult = await this.getEntity(cachedRpoId, historical);
+      return { ...entityResult, durationMs: Date.now() - start };
+    }
 
     const searchResult = await this.search(ico);
     if (!searchResult.found || !searchResult.data || searchResult.data.length === 0) {
@@ -122,7 +158,8 @@ export class RpoAdapter {
     }
 
     const rpoId = searchResult.data[0].rpoId;
-    const entityResult = await this.getEntity(rpoId);
+    this.icoToRpoId.set(ico, rpoId);
+    const entityResult = await this.getEntity(rpoId, historical);
     return { ...entityResult, durationMs: Date.now() - start };
   }
 

@@ -30,7 +30,7 @@ export function registerCompanyHistory(server: McpServer): void {
       }
 
       const start = Date.now();
-      const entityResult = await rpo.getEntityByIco(validation.normalized);
+      const entityResult = await rpo.getEntityByIco(validation.normalized, true);
 
       if (!entityResult.found || !entityResult.data) {
         return {

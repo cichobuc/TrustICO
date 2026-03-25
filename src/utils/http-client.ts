@@ -116,6 +116,17 @@ export class HttpClient {
         });
 
         clearTimeout(timer);
+
+        // Handle 429 Too Many Requests — wait and retry
+        if (response.status === 429 && attempt < retries) {
+          const retryAfter = response.headers.get("retry-after");
+          const waitMs = retryAfter
+            ? Math.min(parseInt(retryAfter, 10) * 1000 || 2000, 5000)
+            : 2000;
+          await new Promise((resolve) => setTimeout(resolve, waitMs));
+          continue;
+        }
+
         const durationMs = Date.now() - start;
 
         const responseHeaders: Record<string, string> = {};
