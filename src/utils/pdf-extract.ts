@@ -15,6 +15,9 @@ import { PDFParse } from "pdf-parse";
 /** Max characters to return — keeps MCP response reasonable. */
 const MAX_TEXT_LENGTH = 50_000;
 
+/** Max base64 input size (50MB base64 ≈ 37.5MB binary). */
+const MAX_BASE64_LENGTH = 50 * 1024 * 1024;
+
 /** Below this many non-whitespace chars, treat as scanned/image PDF. */
 const MIN_TEXT_CHARS = 20;
 
@@ -57,6 +60,18 @@ function createTimeout(ms: number, reason: string): { promise: Promise<never>; c
  * Never throws.
  */
 export async function extractTextFromPdf(base64: string): Promise<PdfExtractResult> {
+  // Guard against excessively large inputs
+  if (base64.length > MAX_BASE64_LENGTH) {
+    return {
+      text: "",
+      pages: 0,
+      truncated: false,
+      totalTextLength: 0,
+      method: "none",
+      error: `PDF príliš veľké (${Math.round(base64.length / 1024 / 1024)}MB base64). Maximum je ${MAX_BASE64_LENGTH / 1024 / 1024}MB.`,
+    };
+  }
+
   // Decode base64 once — shared between native extraction and OCR
   const buf = Buffer.from(base64, "base64");
 

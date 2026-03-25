@@ -75,6 +75,13 @@ export function registerFinancialAttachment(server: McpServer): void {
             result.error ?? `Príloha ${attachmentId} nebola nájdená`);
         }
 
+        // Server-side size check on actual downloaded content (don't trust client-supplied velkost)
+        const actualBytes = Math.ceil(result.data.content.length * 3 / 4); // base64 → binary size estimate
+        if (actualBytes > MAX_SIZE_BYTES) {
+          return errorResponse("ruz", Date.now() - start,
+            `Stiahnutá príloha je príliš veľká (${Math.round(actualBytes / 1024 / 1024)}MB). Maximum je 10MB.`);
+        }
+
         const isPdf = result.data.mimeType.includes("pdf");
 
         // Extract text from PDF (skip for non-PDF attachments)

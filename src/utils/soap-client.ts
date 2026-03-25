@@ -41,12 +41,14 @@ function getClient(wsdlUrl: string): Promise<Client> {
   return p;
 }
 
-// --- Timeout helper ---
+// --- Clearable timeout helper (prevents timer leaks in Promise.race) ---
 
-function timeoutPromise(ms: number): Promise<never> {
-  return new Promise((_, reject) =>
-    setTimeout(() => reject(new Error(`SOAP request timed out after ${ms}ms`)), ms),
-  );
+function createTimeout(ms: number, reason: string): { promise: Promise<never>; clear: () => void } {
+  let timer: ReturnType<typeof setTimeout>;
+  const promise = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(reason)), ms);
+  });
+  return { promise, clear: () => clearTimeout(timer) };
 }
 
 // --- Core SOAP call with timeout, rate limiting, and retry ---
@@ -74,8 +76,13 @@ async function callService<T>(
       }
 
       const callPromise = (client as Record<string, (...a: unknown[]) => Promise<unknown[]>>)[methodName](args);
-      const [result] = await Promise.race([callPromise, timeoutPromise(SOAP_TIMEOUT_MS)]);
-      return result as T;
+      const { promise: timeout, clear: clearTimer } = createTimeout(SOAP_TIMEOUT_MS, `SOAP request timed out after ${SOAP_TIMEOUT_MS}ms`);
+      try {
+        const [result] = await Promise.race([callPromise, timeout]);
+        return result as T;
+      } finally {
+        clearTimer();
+      }
     } catch (err) {
       lastError = err instanceof Error ? err : new Error(String(err));
       // Non-retryable: operation not found
