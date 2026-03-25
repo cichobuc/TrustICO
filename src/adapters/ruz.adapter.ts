@@ -171,6 +171,7 @@ export class RuzAdapter {
         source: SOURCE,
         raw: true,
         timeoutMs: 15_000,
+        retries: 0,
       });
 
       if (resp.status >= 400) {
@@ -216,6 +217,7 @@ export class RuzAdapter {
         source: SOURCE,
         raw: true,
         timeoutMs: 15_000,
+        retries: 0,
       });
 
       if (resp.status >= 400) {

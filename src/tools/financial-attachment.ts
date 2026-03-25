@@ -70,7 +70,7 @@ export function registerFinancialAttachment(server: McpServer): void {
                 durationMs: result.durationMs,
                 timestamp: new Date().toISOString(),
               },
-            }, null, 2),
+            }),
           }],
         };
       } catch (err) {
@@ -130,7 +130,7 @@ export function registerFinancialAttachment(server: McpServer): void {
                 durationMs: result.durationMs,
                 timestamp: new Date().toISOString(),
               },
-            }, null, 2),
+            }),
           }],
         };
       } catch (err) {

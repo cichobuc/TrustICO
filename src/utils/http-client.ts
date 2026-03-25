@@ -26,7 +26,7 @@ class TokenBucket {
 
   async acquire(): Promise<void> {
     this.refill();
-    if (this.tokens > 0) {
+    if (this.tokens >= 1) {
       this.tokens--;
       return;
     }
@@ -34,6 +34,10 @@ class TokenBucket {
     const waitMs = this.intervalMs / this.maxTokens;
     await new Promise((resolve) => setTimeout(resolve, waitMs));
     this.refill();
+    if (this.tokens < 1) {
+      this.tokens = 0;
+      return;
+    }
     this.tokens--;
   }
 
