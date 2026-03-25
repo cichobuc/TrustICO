@@ -310,7 +310,7 @@ export class FullProfileOrchestrator {
 
     // --- Flatten prílohy across all závierky ---
     const prilohy = zavierky.flatMap((z) =>
-      z.prilohy.map((p) => ({
+      (z.prilohy ?? []).map((p) => ({
         zavierkaId: z.id,
         obdobie: z.obdobieOd && z.obdobieDo
           ? `${z.obdobieOd} — ${z.obdobieDo}`
