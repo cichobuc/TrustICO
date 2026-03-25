@@ -174,12 +174,6 @@ Mega-profil zo VŠETKÝCH zdrojov naraz (paralelné volanie).
     "projekty": []
   },
 
-  "dlhy": {
-    "socpoist": false,
-    "dovera": false,
-    "union": false
-  },
-
   "vies": {
     "valid": true,
     "nazov": "Websupport s. r. o.",
