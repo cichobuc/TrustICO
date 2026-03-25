@@ -89,6 +89,14 @@ export type FullProfileResult = {
     };
     pocetZavierok: number;
     idNajnovsejZavierky: number | null;
+    prilohy: Array<{
+      zavierkaId: number;
+      obdobie: string | null;
+      id: number;
+      nazov: string | null;
+      velkost: number | null;
+      strany: number | null;
+    }>;
   };
   dph: {
     registrovany: boolean;
@@ -300,6 +308,17 @@ export class FullProfileOrchestrator {
     const latestZavierka = zavierky[0] ?? null;
     const ukazovatele = ruzData?.klucoveUkazovatele;
 
+    // --- Flatten prílohy across all závierky ---
+    const prilohy = zavierky.flatMap((z) =>
+      z.prilohy.map((p) => ({
+        zavierkaId: z.id,
+        obdobie: z.obdobieOd && z.obdobieDo
+          ? `${z.obdobieOd} — ${z.obdobieDo}`
+          : null,
+        ...p,
+      })),
+    );
+
     const financie = {
       poslednaZavierka: latestZavierka
         ? {
@@ -320,6 +339,7 @@ export class FullProfileOrchestrator {
       },
       pocetZavierok: zavierky.length,
       idNajnovsejZavierky: latestZavierka?.id ?? null,
+      prilohy,
     };
 
     // --- Build dph / tax ---
