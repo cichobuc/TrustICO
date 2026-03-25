@@ -1,29 +1,54 @@
 /**
  * MCP tools: financial_attachment + financial_report_pdf
  *
- * financial_attachment: Download PDF attachment (poznámky, skeny) from RegisterUZ.
- * financial_report_pdf: Download generated PDF of a report from RegisterUZ.
- *
- * Both tools return PDF as an MCP embedded resource (type: "resource" with blob)
- * so that LLM clients can natively read the PDF content.
+ * Both tools return 3 content blocks:
+ *   [0] TextContent  — metadata JSON
+ *   [1] TextContent  — extracted text from PDF (or error message)
+ *   [2] EmbeddedResource — raw PDF blob for native viewing
  */
 
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { sharedRuzAdapter as adapter } from "./_shared-clients.js";
+import { extractTextFromPdf, type PdfExtractResult } from "../utils/pdf-extract.js";
 
-function metaText(source: string, durationMs: number, extra?: Record<string, unknown>) {
+function metaJson(source: string, durationMs: number, extra?: Record<string, unknown>) {
   return JSON.stringify({
     ...extra,
     _meta: { source, durationMs, timestamp: new Date().toISOString() },
   }, null, 2);
 }
 
+function buildTextBlock(extract: PdfExtractResult): { type: "text"; text: string } {
+  if (extract.error || !extract.text) {
+    return {
+      type: "text" as const,
+      text: `[PDF text extraction]\n${extract.error ?? "Žiadny text v PDF"}`,
+    };
+  }
+
+  const parts: string[] = [`[Extrahovaný text z PDF — ${extract.pages} strán`];
+  if (extract.truncated) {
+    parts.push(`, skrátené na 50 000 z ${extract.totalTextLength} znakov`);
+  }
+  parts.push("]\n\n");
+  parts.push(extract.text);
+
+  return { type: "text" as const, text: parts.join("") };
+}
+
+function errorResponse(source: string, durationMs: number, error: string) {
+  return {
+    isError: true,
+    content: [{ type: "text" as const, text: metaJson(source, durationMs, { error }) }],
+  };
+}
+
 export function registerFinancialAttachment(server: McpServer): void {
   // --- financial_attachment ---
   server.tool(
     "financial_attachment",
-    "Stiahne PDF prílohu (poznámky k závierke, skeny) z RegisterUZ. Vstup: attachmentId z company_financials.",
+    "Stiahne PDF prílohu (poznámky k závierke, skeny) z RegisterUZ. Vráti extrahovaný text aj samotné PDF. Vstup: attachmentId z company_financials.",
     {
       attachmentId: z.number().int().positive().describe("ID prílohy z company_financials (pole prilohy[].id)"),
       nazov: z.string().optional().describe("Názov prílohy (z company_financials prilohy[].nazov)"),
@@ -31,46 +56,46 @@ export function registerFinancialAttachment(server: McpServer): void {
     },
     async ({ attachmentId, nazov, velkost }) => {
       const start = Date.now();
-      const MAX_SIZE_BYTES = 10 * 1024 * 1024; // 10 MB
+      const MAX_SIZE_BYTES = 10 * 1024 * 1024;
 
       if (velkost && velkost > MAX_SIZE_BYTES) {
-        return {
-          isError: true,
-          content: [{
-            type: "text" as const,
-            text: metaText("ruz", Date.now() - start, {
-              error: `Príloha je príliš veľká (${Math.round(velkost / 1024 / 1024)}MB). Maximum je 10MB.`,
-            }),
-          }],
-        };
+        return errorResponse("ruz", Date.now() - start,
+          `Príloha je príliš veľká (${Math.round(velkost / 1024 / 1024)}MB). Maximum je 10MB.`);
       }
 
       try {
         const result = await adapter.getAttachment(attachmentId);
 
         if (!result.found || !result.data) {
-          return {
-            isError: true,
-            content: [{
-              type: "text" as const,
-              text: metaText("ruz", result.durationMs, {
-                error: result.error ?? `Príloha ${attachmentId} nebola nájdená`,
-              }),
-            }],
-          };
+          return errorResponse("ruz", result.durationMs,
+            result.error ?? `Príloha ${attachmentId} nebola nájdená`);
         }
+
+        const isPdf = result.data.mimeType.includes("pdf");
+
+        // Extract text from PDF (skip for non-PDF attachments)
+        const extract = isPdf
+          ? await extractTextFromPdf(result.data.content)
+          : { text: "", pages: 0, truncated: false, totalTextLength: 0, error: "Príloha nie je PDF — extrakcia textu nie je dostupná" };
 
         return {
           content: [
             {
               type: "text" as const,
-              text: metaText("ruz", result.durationMs, {
+              text: metaJson("ruz", Date.now() - start, {
                 attachmentId,
                 nazov: nazov ?? null,
                 mimeType: result.data.mimeType,
                 velkost: velkost ?? null,
+                textExtraction: {
+                  pages: extract.pages,
+                  truncated: extract.truncated,
+                  totalTextLength: extract.totalTextLength,
+                  ...(extract.error ? { error: extract.error } : {}),
+                },
               }),
             },
+            buildTextBlock(extract),
             {
               type: "resource" as const,
               resource: {
@@ -82,15 +107,8 @@ export function registerFinancialAttachment(server: McpServer): void {
           ],
         };
       } catch (err) {
-        return {
-          isError: true,
-          content: [{
-            type: "text" as const,
-            text: metaText("ruz", Date.now() - start, {
-              error: err instanceof Error ? err.message : "Neočakávaná chyba pri sťahovaní prílohy",
-            }),
-          }],
-        };
+        return errorResponse("ruz", Date.now() - start,
+          err instanceof Error ? err.message : "Neočakávaná chyba pri sťahovaní prílohy");
       }
     },
   );
@@ -98,7 +116,7 @@ export function registerFinancialAttachment(server: McpServer): void {
   // --- financial_report_pdf ---
   server.tool(
     "financial_report_pdf",
-    "Generovaný PDF účtovného výkazu z RegisterUZ. Vstup: reportId z company_financials.",
+    "Generovaný PDF účtovného výkazu z RegisterUZ. Vráti extrahovaný text aj samotné PDF. Vstup: reportId z company_financials.",
     {
       reportId: z.number().int().positive().describe("ID výkazu z company_financials (pole vykazy[].id)"),
     },
@@ -109,23 +127,29 @@ export function registerFinancialAttachment(server: McpServer): void {
         const result = await adapter.getReportPdf(reportId);
 
         if (!result.found || !result.data) {
-          return {
-            isError: true,
-            content: [{
-              type: "text" as const,
-              text: metaText("ruz", result.durationMs, {
-                error: result.error ?? `PDF pre výkaz ${reportId} nebolo nájdené`,
-              }),
-            }],
-          };
+          return errorResponse("ruz", result.durationMs,
+            result.error ?? `PDF pre výkaz ${reportId} nebolo nájdené`);
         }
+
+        // Extract text
+        const extract = await extractTextFromPdf(result.data.content);
 
         return {
           content: [
             {
               type: "text" as const,
-              text: metaText("ruz", result.durationMs, { reportId, mimeType: result.data.mimeType }),
+              text: metaJson("ruz", Date.now() - start, {
+                reportId,
+                mimeType: result.data.mimeType,
+                textExtraction: {
+                  pages: extract.pages,
+                  truncated: extract.truncated,
+                  totalTextLength: extract.totalTextLength,
+                  ...(extract.error ? { error: extract.error } : {}),
+                },
+              }),
             },
+            buildTextBlock(extract),
             {
               type: "resource" as const,
               resource: {
@@ -137,15 +161,8 @@ export function registerFinancialAttachment(server: McpServer): void {
           ],
         };
       } catch (err) {
-        return {
-          isError: true,
-          content: [{
-            type: "text" as const,
-            text: metaText("ruz", Date.now() - start, {
-              error: err instanceof Error ? err.message : "Neočakávaná chyba pri generovaní PDF",
-            }),
-          }],
-        };
+        return errorResponse("ruz", Date.now() - start,
+          err instanceof Error ? err.message : "Neočakávaná chyba pri generovaní PDF");
       }
     },
   );
