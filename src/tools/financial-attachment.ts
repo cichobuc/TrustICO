@@ -3,11 +3,21 @@
  *
  * financial_attachment: Download PDF attachment (poznámky, skeny) from RegisterUZ.
  * financial_report_pdf: Download generated PDF of a report from RegisterUZ.
+ *
+ * Both tools return PDF as an MCP embedded resource (type: "resource" with blob)
+ * so that LLM clients can natively read the PDF content.
  */
 
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { sharedRuzAdapter as adapter } from "./_shared-clients.js";
+
+function metaText(source: string, durationMs: number, extra?: Record<string, unknown>) {
+  return JSON.stringify({
+    ...extra,
+    _meta: { source, durationMs, timestamp: new Date().toISOString() },
+  }, null, 2);
+}
 
 export function registerFinancialAttachment(server: McpServer): void {
   // --- financial_attachment ---
@@ -28,10 +38,9 @@ export function registerFinancialAttachment(server: McpServer): void {
           isError: true,
           content: [{
             type: "text" as const,
-            text: JSON.stringify({
+            text: metaText("ruz", Date.now() - start, {
               error: `Príloha je príliš veľká (${Math.round(velkost / 1024 / 1024)}MB). Maximum je 10MB.`,
-              _meta: { source: "ruz", durationMs: Date.now() - start, timestamp: new Date().toISOString() },
-            }, null, 2),
+            }),
           }],
         };
       }
@@ -44,44 +53,42 @@ export function registerFinancialAttachment(server: McpServer): void {
             isError: true,
             content: [{
               type: "text" as const,
-              text: JSON.stringify({
+              text: metaText("ruz", result.durationMs, {
                 error: result.error ?? `Príloha ${attachmentId} nebola nájdená`,
-                _meta: {
-                  source: "ruz",
-                  durationMs: result.durationMs,
-                  timestamp: new Date().toISOString(),
-                },
-              }, null, 2),
+              }),
             }],
           };
         }
 
         return {
-          content: [{
-            type: "text" as const,
-            text: JSON.stringify({
-              attachmentId,
-              nazov: nazov ?? null,
-              mimeType: result.data.mimeType,
-              velkost: velkost ?? null,
-              content: result.data.content,
-              _meta: {
-                source: "ruz",
-                durationMs: result.durationMs,
-                timestamp: new Date().toISOString(),
+          content: [
+            {
+              type: "text" as const,
+              text: metaText("ruz", result.durationMs, {
+                attachmentId,
+                nazov: nazov ?? null,
+                mimeType: result.data.mimeType,
+                velkost: velkost ?? null,
+              }),
+            },
+            {
+              type: "resource" as const,
+              resource: {
+                uri: `ruz://attachment/${attachmentId}`,
+                mimeType: result.data.mimeType,
+                blob: result.data.content,
               },
-            }, null, 2),
-          }],
+            },
+          ],
         };
       } catch (err) {
         return {
           isError: true,
           content: [{
             type: "text" as const,
-            text: JSON.stringify({
+            text: metaText("ruz", Date.now() - start, {
               error: err instanceof Error ? err.message : "Neočakávaná chyba pri sťahovaní prílohy",
-              _meta: { source: "ruz", durationMs: Date.now() - start, timestamp: new Date().toISOString() },
-            }, null, 2),
+            }),
           }],
         };
       }
@@ -106,42 +113,37 @@ export function registerFinancialAttachment(server: McpServer): void {
             isError: true,
             content: [{
               type: "text" as const,
-              text: JSON.stringify({
+              text: metaText("ruz", result.durationMs, {
                 error: result.error ?? `PDF pre výkaz ${reportId} nebolo nájdené`,
-                _meta: {
-                  source: "ruz",
-                  durationMs: result.durationMs,
-                  timestamp: new Date().toISOString(),
-                },
-              }, null, 2),
+              }),
             }],
           };
         }
 
         return {
-          content: [{
-            type: "text" as const,
-            text: JSON.stringify({
-              reportId,
-              mimeType: result.data.mimeType,
-              content: result.data.content,
-              _meta: {
-                source: "ruz",
-                durationMs: result.durationMs,
-                timestamp: new Date().toISOString(),
+          content: [
+            {
+              type: "text" as const,
+              text: metaText("ruz", result.durationMs, { reportId, mimeType: result.data.mimeType }),
+            },
+            {
+              type: "resource" as const,
+              resource: {
+                uri: `ruz://report-pdf/${reportId}`,
+                mimeType: result.data.mimeType,
+                blob: result.data.content,
               },
-            }, null, 2),
-          }],
+            },
+          ],
         };
       } catch (err) {
         return {
           isError: true,
           content: [{
             type: "text" as const,
-            text: JSON.stringify({
+            text: metaText("ruz", Date.now() - start, {
               error: err instanceof Error ? err.message : "Neočakávaná chyba pri generovaní PDF",
-              _meta: { source: "ruz", durationMs: Date.now() - start, timestamp: new Date().toISOString() },
-            }, null, 2),
+            }),
           }],
         };
       }
