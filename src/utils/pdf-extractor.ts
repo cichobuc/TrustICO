@@ -192,5 +192,15 @@ export async function terminateTesseractWorker(): Promise<void> {
     await tesseractWorker.terminate();
     tesseractWorker = null;
     tesseractInitPromise = null;
+  } else if (tesseractInitPromise) {
+    // Init is in-flight — wait for it, then terminate
+    try {
+      const worker = await tesseractInitPromise;
+      await worker.terminate();
+    } catch {
+      // Init failed anyway, nothing to terminate
+    }
+    tesseractWorker = null;
+    tesseractInitPromise = null;
   }
 }

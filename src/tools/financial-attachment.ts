@@ -22,7 +22,7 @@ export function registerFinancialAttachment(server: McpServer): void {
       attachmentId: z.number().int().positive().describe("ID prílohy z company_financials (pole prilohy[].id)"),
       nazov: z.string().optional().describe("Názov prílohy (z company_financials prilohy[].nazov)"),
       velkost: z.number().optional().describe("Veľkosť prílohy v bytoch (z company_financials prilohy[].velkost)"),
-      extractText: z.boolean().optional().default(false).describe("Ak true, extrahuje text z PDF (digitálny) alebo OCR (sken). Default: false."),
+      extractText: z.boolean().nullish().default(false).describe("Ak true, extrahuje text z PDF (digitálny) alebo OCR (sken). Default: false."),
     },
     async ({ attachmentId, nazov, velkost, extractText: shouldExtract }) => {
       const start = Date.now();
@@ -115,7 +115,7 @@ export function registerFinancialAttachment(server: McpServer): void {
     "Generovaný PDF účtovného výkazu z RegisterUZ. Ak extractText=true, extrahuje text z PDF. Vstup: reportId z company_financials.",
     {
       reportId: z.number().int().positive().describe("ID výkazu z company_financials (pole vykazy[].id)"),
-      extractText: z.boolean().optional().default(false).describe("Ak true, extrahuje text z PDF. Default: false."),
+      extractText: z.boolean().nullish().default(false).describe("Ak true, extrahuje text z PDF. Default: false."),
     },
     async ({ reportId, extractText: shouldExtract }) => {
       const start = Date.now();
