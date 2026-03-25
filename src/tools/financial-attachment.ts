@@ -2,24 +2,29 @@
  * MCP tools: financial_attachment + financial_report_pdf
  *
  * financial_attachment: Download PDF attachment (poznámky, skeny) from RegisterUZ.
+ *   Supports optional text extraction (digital) + OCR fallback (scanned).
  * financial_report_pdf: Download generated PDF of a report from RegisterUZ.
+ *   Supports optional text extraction.
  */
 
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { sharedRuzAdapter as adapter } from "./_shared-clients.js";
+import { extractPdfText } from "../utils/pdf-extractor.js";
+import type { PdfExtractionResult } from "../types/pdf.types.js";
 
 export function registerFinancialAttachment(server: McpServer): void {
   // --- financial_attachment ---
   server.tool(
     "financial_attachment",
-    "Stiahne PDF prílohu (poznámky k závierke, skeny) z RegisterUZ. Vstup: attachmentId z company_financials.",
+    "Stiahne PDF prílohu (poznámky k závierke, skeny) z RegisterUZ. Ak extractText=true, extrahuje text z digitálneho PDF alebo použije OCR pre naskenované dokumenty. Vstup: attachmentId z company_financials.",
     {
       attachmentId: z.number().int().positive().describe("ID prílohy z company_financials (pole prilohy[].id)"),
       nazov: z.string().optional().describe("Názov prílohy (z company_financials prilohy[].nazov)"),
       velkost: z.number().optional().describe("Veľkosť prílohy v bytoch (z company_financials prilohy[].velkost)"),
+      extractText: z.boolean().optional().default(false).describe("Ak true, extrahuje text z PDF (digitálny) alebo OCR (sken). Default: false."),
     },
-    async ({ attachmentId, nazov, velkost }) => {
+    async ({ attachmentId, nazov, velkost, extractText: shouldExtract }) => {
       const start = Date.now();
       const MAX_SIZE_BYTES = 10 * 1024 * 1024; // 10 MB
 
@@ -56,6 +61,20 @@ export function registerFinancialAttachment(server: McpServer): void {
           };
         }
 
+        // Optional text extraction
+        let extractedText: PdfExtractionResult | null = null;
+        if (shouldExtract && result.data.mimeType.startsWith("application/pdf")) {
+          try {
+            const pdfBuffer = Buffer.from(result.data.content, "base64");
+            extractedText = await extractPdfText(pdfBuffer);
+          } catch {
+            // Extraction failed — still return the PDF
+          }
+        }
+
+        // When text was extracted, return text (saves tokens) instead of base64 blob
+        const hasText = extractedText && extractedText.method !== "none";
+
         return {
           content: [{
             type: "text" as const,
@@ -64,10 +83,12 @@ export function registerFinancialAttachment(server: McpServer): void {
               nazov: nazov ?? null,
               mimeType: result.data.mimeType,
               velkost: velkost ?? null,
-              content: result.data.content,
+              ...(hasText
+                ? { extractedText }
+                : { content: result.data.content }),
               _meta: {
                 source: "ruz",
-                durationMs: result.durationMs,
+                durationMs: Date.now() - start,
                 timestamp: new Date().toISOString(),
               },
             }),
@@ -91,11 +112,12 @@ export function registerFinancialAttachment(server: McpServer): void {
   // --- financial_report_pdf ---
   server.tool(
     "financial_report_pdf",
-    "Generovaný PDF účtovného výkazu z RegisterUZ. Vstup: reportId z company_financials.",
+    "Generovaný PDF účtovného výkazu z RegisterUZ. Ak extractText=true, extrahuje text z PDF. Vstup: reportId z company_financials.",
     {
       reportId: z.number().int().positive().describe("ID výkazu z company_financials (pole vykazy[].id)"),
+      extractText: z.boolean().optional().default(false).describe("Ak true, extrahuje text z PDF. Default: false."),
     },
-    async ({ reportId }) => {
+    async ({ reportId, extractText: shouldExtract }) => {
       const start = Date.now();
 
       try {
@@ -118,16 +140,31 @@ export function registerFinancialAttachment(server: McpServer): void {
           };
         }
 
+        // Optional text extraction
+        let extractedText: PdfExtractionResult | null = null;
+        if (shouldExtract && result.data.mimeType.startsWith("application/pdf")) {
+          try {
+            const pdfBuffer = Buffer.from(result.data.content, "base64");
+            extractedText = await extractPdfText(pdfBuffer);
+          } catch {
+            // Extraction failed — still return the PDF
+          }
+        }
+
+        const hasText = extractedText && extractedText.method !== "none";
+
         return {
           content: [{
             type: "text" as const,
             text: JSON.stringify({
               reportId,
               mimeType: result.data.mimeType,
-              content: result.data.content,
+              ...(hasText
+                ? { extractedText }
+                : { content: result.data.content }),
               _meta: {
                 source: "ruz",
-                durationMs: result.durationMs,
+                durationMs: Date.now() - start,
                 timestamp: new Date().toISOString(),
               },
             }),

@@ -25,8 +25,11 @@
   "license": "ISC",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.27.1",
+    "@napi-rs/canvas": "^0.1.97",
     "dotenv": "^17.3.1",
-    "soap": "^1.8.0"
+    "soap": "^1.8.0",
+    "tesseract.js": "^7.0.0",
+    "unpdf": "^1.4.0"
   },
   "devDependencies": {
     "@types/node": "^25.5.0",
