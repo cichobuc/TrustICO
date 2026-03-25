@@ -42,6 +42,7 @@ export class RuzPipeline {
     durationMs: number;
   }> {
     const start = Date.now();
+    const PIPELINE_TIMEOUT_MS = 30_000; // 30s max for entire pipeline
 
     // Step 1: Search by IČO → entity IDs
     const searchResult = await this.adapter.findEntity(ico);
@@ -79,10 +80,16 @@ export class RuzPipeline {
       };
     }
 
-    // Step 3: Fetch ALL statement details in parallel to sort by date
-    // (IDs are NOT in chronological order)
+    // Step 3: Fetch statement details in parallel to sort by date.
+    // Limit fetches to avoid rate-limiter bottleneck for entities with many závierky.
+    // Higher IDs generally correspond to newer statements, so take the last N IDs.
+    const MAX_STMT_FETCH = 10;
+    const idsToFetch = statementIds.length > MAX_STMT_FETCH
+      ? statementIds.slice(-MAX_STMT_FETCH)
+      : statementIds;
+
     const stmtResults = await Promise.allSettled(
-      statementIds.map((id) => this.adapter.getStatement(id)),
+      idsToFetch.map((id) => this.adapter.getStatement(id)),
     );
 
     const allStatements: RuzStatementRaw[] = [];
@@ -108,7 +115,16 @@ export class RuzPipeline {
     const MAX_STATEMENTS = 5;
     const statementsToProcess = filteredStatements.slice(0, MAX_STATEMENTS);
 
-    // Step 4: Fetch ALL reports for ALL statements in parallel
+    // Timeout check before expensive report fetches
+    if (Date.now() - start > PIPELINE_TIMEOUT_MS) {
+      return {
+        success: false,
+        error: `Pipeline timeout po ${PIPELINE_TIMEOUT_MS / 1000}s — príliš veľa závierok`,
+        durationMs: Date.now() - start,
+      };
+    }
+
+    // Step 4: Fetch reports for statements in parallel
     // Collect all report IDs with their statement index, then batch-fetch
     const allReportIds = statementsToProcess.flatMap((stmt) =>
       (stmt.idUctovnychVykazov ?? []),
