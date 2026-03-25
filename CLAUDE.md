@@ -121,9 +121,16 @@ Každý adapter je trieda s týmito pravidlami:
 - DIČ získaj z RegisterUZ alebo RPO
 
 ### IS REPLIK SOAP (replik-ws.justice.sk)
+- **Od 1.10.2025 nový systém** — nahradil starý "Register úpadcov"
 - SOAP 1.1 — `konanieService` a `oznamService`
+- **WSDL path sa zmenil!** Starý: `/replik/...?wsdl` → Nový: `/ru-verejnost-ws/...Service.wsdl`
+- Production WSDL: `https://replik-ws.justice.sk/ru-verejnost-ws/konanieService.wsdl`
+- Production WSDL: `https://replik-ws.justice.sk/ru-verejnost-ws/oznamService.wsdl`
+- Test WSDL: `https://replik-wst.justice.sk/ru-verejnost-ws/konanieService.wsdl`
+- **Autentifikácia NIE JE potrebná** — verejné API bez registrácie
 - Search by IČO: operácia `vyhladajKonania` s parametrom `ico`
 - Detail: operácia `getKonanieDetail` s parametrom `konanieId`
+- Integračný manuál: https://www.justice.gov.sk/sluzby/register-predinsolvencnych-likvidacnych-a-insolvencnych-konani/prirucky-a-manualy-k-is-replik/
 
 ### DataHub slovensko.digital
 - Používa **interné ID**, nie IČO — pre IČO lookup radšej ŠÚSR RPO

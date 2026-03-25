@@ -10,10 +10,11 @@ import { createClientAsync, type Client } from "soap";
 import { SOURCE_RATE_LIMITS } from "../types/common.types.js";
 import { TokenBucket } from "./http-client.js";
 
-const REPLIK_WSDL_BASE = "https://replik-ws.justice.sk/replik";
+// IS REPLIK v2 (od 1.10.2025) — nový path /ru-verejnost-ws/ a .wsdl suffix
+const REPLIK_WSDL_BASE = "https://replik-ws.justice.sk/ru-verejnost-ws";
 
-const KONANIE_WSDL = `${REPLIK_WSDL_BASE}/konanieService?wsdl`;
-const OZNAM_WSDL = `${REPLIK_WSDL_BASE}/oznamService?wsdl`;
+const KONANIE_WSDL = `${REPLIK_WSDL_BASE}/konanieService.wsdl`;
+const OZNAM_WSDL = `${REPLIK_WSDL_BASE}/oznamService.wsdl`;
 
 const SOAP_TIMEOUT_MS = 8_000;
 const SOAP_RETRIES = 1;
