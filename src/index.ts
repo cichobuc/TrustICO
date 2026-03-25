@@ -227,3 +227,31 @@ httpServer.listen(PORT, () => {
     mcp: `http://localhost:${PORT}/mcp`,
   });
 });
+
+// --- Graceful shutdown ---
+
+async function shutdown(signal: string): Promise<void> {
+  logger.info(`${signal} received — shutting down gracefully`);
+
+  // Close HTTP server (stop accepting new connections)
+  httpServer.close();
+
+  // Close all MCP transports
+  for (const [id, transport] of transports) {
+    try { await transport.close(); } catch { /* ignore */ }
+    transports.delete(id);
+    sessionTimestamps.delete(id);
+  }
+
+  // Terminate tesseract worker if initialized
+  try {
+    const { terminateTesseractWorker } = await import("./utils/pdf-extractor.js");
+    await terminateTesseractWorker();
+  } catch { /* ignore — module may not be loaded */ }
+
+  logger.info("Shutdown complete");
+  process.exit(0);
+}
+
+process.on("SIGTERM", () => shutdown("SIGTERM"));
+process.on("SIGINT", () => shutdown("SIGINT"));

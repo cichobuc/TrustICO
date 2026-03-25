@@ -24,8 +24,9 @@ export class TokenBucket {
     this.lastRefill = Date.now();
   }
 
-  async acquire(): Promise<void> {
+  async acquire(maxWaitMs = 10_000): Promise<void> {
     const waitMs = this.intervalMs / this.maxTokens;
+    const deadline = Date.now() + maxWaitMs;
     // Loop until a token is available — prevents bypass under sustained load
     while (true) {
       this.refill();
@@ -33,7 +34,10 @@ export class TokenBucket {
         this.tokens--;
         return;
       }
-      await new Promise((resolve) => setTimeout(resolve, waitMs));
+      if (Date.now() >= deadline) {
+        throw new Error(`Rate limit: čakanie na token prekročilo ${maxWaitMs}ms`);
+      }
+      await new Promise((resolve) => setTimeout(resolve, Math.min(waitMs, deadline - Date.now())));
     }
   }
 

@@ -10,6 +10,7 @@
  * 6. parseReport → named rows with columns
  *
  * Error handling on every step — graceful degradation.
+ * Entire pipeline is wrapped in a hard 25s timeout via Promise.race.
  */
 
 import { RuzAdapter } from "../adapters/ruz.adapter.js";
@@ -25,12 +26,18 @@ import type {
   FinancialReportDetail,
 } from "../types/ruz.types.js";
 
+const PIPELINE_TIMEOUT_MS = 25_000; // 25s hard timeout for entire pipeline
+const MAX_STMT_FETCH = 10; // Max statements to fetch (newest IDs)
+const MAX_REPORT_FETCH = 15; // Max reports to fetch across all statements
+const MAX_STATEMENTS = 5; // Max statements in output
+
 export class RuzPipeline {
   constructor(private readonly adapter: RuzAdapter) {}
 
   /**
    * Full pipeline: IČO → entity → statements → reports → parsed data.
    * If `year` is provided, filters to statements matching that year.
+   * Wrapped in a hard timeout — always returns within PIPELINE_TIMEOUT_MS.
    */
   async getFinancials(
     ico: string,
@@ -42,8 +49,44 @@ export class RuzPipeline {
     durationMs: number;
   }> {
     const start = Date.now();
-    const PIPELINE_TIMEOUT_MS = 30_000; // 30s max for entire pipeline
 
+    // Hard timeout via Promise.race — ensures we ALWAYS respond
+    let timer: ReturnType<typeof setTimeout>;
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timer = setTimeout(
+        () => reject(new Error(`Pipeline timeout po ${PIPELINE_TIMEOUT_MS / 1000}s`)),
+        PIPELINE_TIMEOUT_MS,
+      );
+    });
+
+    try {
+      const result = await Promise.race([
+        this._getFinancialsInner(ico, year, start),
+        timeoutPromise,
+      ]);
+      return result;
+    } catch (err) {
+      return {
+        success: false,
+        error: err instanceof Error ? err.message : String(err),
+        durationMs: Date.now() - start,
+      };
+    } finally {
+      clearTimeout(timer!);
+    }
+  }
+
+  /** Inner pipeline logic — separated so Promise.race can wrap it. */
+  private async _getFinancialsInner(
+    ico: string,
+    year: number | undefined,
+    start: number,
+  ): Promise<{
+    success: boolean;
+    data?: CompanyFinancialsResult;
+    error?: string;
+    durationMs: number;
+  }> {
     // Step 1: Search by IČO → entity IDs
     const searchResult = await this.adapter.findEntity(ico);
     if (!searchResult.found || !searchResult.data || searchResult.data.length === 0) {
@@ -83,7 +126,6 @@ export class RuzPipeline {
     // Step 3: Fetch statement details in parallel to sort by date.
     // Limit fetches to avoid rate-limiter bottleneck for entities with many závierky.
     // Higher IDs generally correspond to newer statements, so take the last N IDs.
-    const MAX_STMT_FETCH = 10;
     const idsToFetch = statementIds.length > MAX_STMT_FETCH
       ? statementIds.slice(-MAX_STMT_FETCH)
       : statementIds;
@@ -111,34 +153,25 @@ export class RuzPipeline {
       });
     }
 
-    // Take top 5 (already sorted: latest first)
-    const MAX_STATEMENTS = 5;
+    // Take top N (already sorted: latest first)
     const statementsToProcess = filteredStatements.slice(0, MAX_STATEMENTS);
 
-    // Timeout check before expensive report fetches
-    if (Date.now() - start > PIPELINE_TIMEOUT_MS) {
-      return {
-        success: false,
-        error: `Pipeline timeout po ${PIPELINE_TIMEOUT_MS / 1000}s — príliš veľa závierok`,
-        durationMs: Date.now() - start,
-      };
-    }
-
-    // Step 4: Fetch reports for statements in parallel
-    // Collect all report IDs with their statement index, then batch-fetch
+    // Step 4: Fetch reports for statements in parallel.
+    // CAP total report fetches to prevent rate-limiter exhaustion.
     const allReportIds = statementsToProcess.flatMap((stmt) =>
       (stmt.idUctovnychVykazov ?? []),
     );
+    const reportIdsToFetch = allReportIds.slice(0, MAX_REPORT_FETCH);
     const reportCache = new Map<number, RuzReportRaw>();
 
-    if (allReportIds.length > 0) {
+    if (reportIdsToFetch.length > 0) {
       const reportResults = await Promise.allSettled(
-        allReportIds.map((id) => this.adapter.getReport(id)),
+        reportIdsToFetch.map((id) => this.adapter.getReport(id)),
       );
       for (let i = 0; i < reportResults.length; i++) {
         const r = reportResults[i];
         if (r.status === "fulfilled" && r.value.found && r.value.data) {
-          reportCache.set(allReportIds[i], r.value.data);
+          reportCache.set(reportIdsToFetch[i], r.value.data);
         }
       }
     }

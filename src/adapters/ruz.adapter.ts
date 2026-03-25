@@ -190,6 +190,10 @@ export class RuzAdapter {
       if (buf.length > MAX_PDF_BYTES) {
         return { found: false, error: `Príloha je príliš veľká (${Math.round(buf.length / 1024 / 1024)}MB, max ${MAX_PDF_MB}MB)`, durationMs: Date.now() - start, source: SOURCE };
       }
+      // Validate PDF magic bytes — catches error pages served with wrong content-type
+      if (contentType.includes("application/pdf") && buf.length >= 5 && buf.subarray(0, 5).toString("ascii") !== "%PDF-") {
+        return { found: false, error: "Server vrátil neplatný PDF súbor (chýba %PDF- hlavička)", durationMs: Date.now() - start, source: SOURCE };
+      }
       const base64 = buf.toString("base64");
 
       return {
@@ -235,6 +239,10 @@ export class RuzAdapter {
       }
       if (buf.length > MAX_PDF_BYTES) {
         return { found: false, error: `PDF je príliš veľké (${Math.round(buf.length / 1024 / 1024)}MB, max ${MAX_PDF_MB}MB)`, durationMs: Date.now() - start, source: SOURCE };
+      }
+      // Validate PDF magic bytes — catches error pages served with wrong content-type
+      if (contentType.includes("application/pdf") && buf.length >= 5 && buf.subarray(0, 5).toString("ascii") !== "%PDF-") {
+        return { found: false, error: "Server vrátil neplatný PDF súbor (chýba %PDF- hlavička)", durationMs: Date.now() - start, source: SOURCE };
       }
       const base64 = buf.toString("base64");
 

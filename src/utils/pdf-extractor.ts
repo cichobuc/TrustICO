@@ -16,8 +16,8 @@ import type { PdfExtractionResult } from "../types/pdf.types.js";
 
 const MIN_CHARS_PER_PAGE = 50;
 const MAX_OCR_PAGES = 15;
-const OCR_TIMEOUT_MS = 60_000;
-const PER_PAGE_TIMEOUT_MS = 30_000;
+const OCR_TIMEOUT_MS = 30_000; // 30s total for all OCR pages
+const PER_PAGE_TIMEOUT_MS = 15_000; // 15s per individual page
 const RENDER_SCALE = 2.0; // 2x scale ≈ 144 DPI (good balance speed/quality)
 
 // --- Lazy Tesseract worker singleton ---
@@ -54,8 +54,9 @@ async function getTesseractWorker(): Promise<any> {
  */
 export async function extractPdfText(buffer: Buffer): Promise<PdfExtractionResult> {
   const start = Date.now();
-  // Copy buffer to own ArrayBuffer — prevents shared/pooled buffer issues
-  const data = new Uint8Array(buffer);
+  // Copy buffer to an independent ArrayBuffer — Node.js Buffers share a pool,
+  // so new Uint8Array(buffer) would still reference pooled memory.
+  const data = new Uint8Array(buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength));
 
   // Step 1: Try digital text extraction
   try {
