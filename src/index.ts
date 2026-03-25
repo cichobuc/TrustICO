@@ -114,7 +114,7 @@ const httpServer = createServer(async (req, res) => {
           // Create a fresh McpServer per session to avoid shared state
           const sessionServer = createMcpServer();
           await sessionServer.connect(transport);
-          await transport.handleRequest(req, res, body);
+          await transport.handleRequest(req, res, message);
           return;
         } else {
           res.writeHead(400, { "Content-Type": "application/json" });
