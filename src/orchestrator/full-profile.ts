@@ -19,6 +19,11 @@ import type { ViesAdapter } from "../adapters/vies.adapter.js";
 import type { ReplikAdapter } from "../adapters/replik.adapter.js";
 import type { ItmsAdapter } from "../adapters/itms.adapter.js";
 import type { RpoEntityDetail } from "../types/rpo.types.js";
+import type { CompanyFinancialsResult } from "../types/ruz.types.js";
+import type { CompanyTaxStatusResult } from "../types/finspr.types.js";
+import type { CompanyKuvResult } from "../types/rpvs.types.js";
+import type { CompanyInsolvencyResult } from "../types/replik.types.js";
+import type { CompanyEuFundsResult } from "../types/itms.types.js";
 import type { AdapterResult } from "../types/common.types.js";
 
 const OVERALL_TIMEOUT_MS = 15_000;
@@ -27,6 +32,14 @@ export type ZdrojStatusEntry = {
   status: "ok" | "error" | "not_found" | "timeout";
   durationMs: number;
   error?: string;
+};
+
+/** Return type of RuzPipeline.getFinancials() */
+type RuzPipelineResult = {
+  success: boolean;
+  data?: CompanyFinancialsResult;
+  error?: string;
+  durationMs: number;
 };
 
 export type FullProfileResult = {
@@ -135,9 +148,7 @@ export class FullProfileOrchestrator {
     const zdrojeStatus: Record<string, ZdrojStatusEntry> = {};
 
     // Phase 1: Run all non-VIES sources in parallel with timeout race
-    const timeoutPromise = new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error("TIMEOUT")), OVERALL_TIMEOUT_MS),
-    );
+    const { promise: timeoutPromise, clear: clearMainTimeout } = createTimeout(OVERALL_TIMEOUT_MS);
 
     const [rpoSettled, ruzSettled, rpvsSettled, finsprSettled, replikSettled, itmsSettled] =
       await Promise.allSettled([
@@ -149,64 +160,30 @@ export class FullProfileOrchestrator {
         Promise.race([this.itms.findPrijimatel(ico), timeoutPromise]),
       ]);
 
-    // --- Extract RPO ---
+    clearMainTimeout();
+
+    // Extract results with proper types
     const rpoResult = unwrap<AdapterResult<RpoEntityDetail>>(rpoSettled);
-    if (rpoResult && rpoResult.found && rpoResult.data) {
-      zdrojeStatus.rpo = { status: "ok", durationMs: rpoResult.durationMs };
-    } else {
-      zdrojeStatus.rpo = settledToStatus(rpoSettled, rpoResult);
-    }
+    const ruzResult = unwrap<RuzPipelineResult>(ruzSettled);
+    const rpvsResult = unwrap<AdapterResult<CompanyKuvResult>>(rpvsSettled);
+    const finsprResult = unwrap<AdapterResult<CompanyTaxStatusResult>>(finsprSettled);
+    const replikResult = unwrap<AdapterResult<CompanyInsolvencyResult>>(replikSettled);
+    const itmsResult = unwrap<AdapterResult<CompanyEuFundsResult>>(itmsSettled);
+
+    // Build zdrojeStatus consistently for all sources
+    zdrojeStatus.rpo = adapterToStatus(rpoSettled, rpoResult);
+    zdrojeStatus.ruz = ruzResult
+      ? adapterToStatus(ruzSettled, { found: ruzResult.success, durationMs: ruzResult.durationMs, error: ruzResult.error })
+      : settledToStatus(ruzSettled);
+    zdrojeStatus.rpvs = adapterToStatus(rpvsSettled, rpvsResult);
+    zdrojeStatus.finspr = adapterToStatus(finsprSettled, finsprResult);
+    zdrojeStatus.replik = adapterToStatus(replikSettled, replikResult);
+    zdrojeStatus.itms = adapterToStatus(itmsSettled, itmsResult);
 
     const entity = rpoResult?.data;
     const people = entity ? this.rpo.mapPeople(entity) : null;
 
-    // --- Extract RUZ ---
-    const ruzResult = unwrap<{ success: boolean; data?: { uctovnaJednotka: { dic: string | null }; zavierky: Array<{ id: number; obdobieOd: string | null; obdobieDo: string | null; typ: string | null; datumPodania: string | null }>; klucoveUkazovatele: { aktivaCelkom: number | null; vlastneImanie: number | null; trzby: number | null; vysledokHospodarenia: number | null; zadlzenost: number | null; roa: number | null } }; error?: string; durationMs: number }>(ruzSettled);
-    if (ruzResult && ruzResult.success && ruzResult.data) {
-      zdrojeStatus.ruz = { status: "ok", durationMs: ruzResult.durationMs };
-    } else {
-      zdrojeStatus.ruz = settledToStatus(ruzSettled, ruzResult ? { found: ruzResult.success, durationMs: ruzResult.durationMs, error: ruzResult.error, source: "ruz" } : null);
-    }
-
-    // --- Extract RPVS ---
-    const rpvsResult = unwrap<AdapterResult<{ ico: string; found: boolean; poznamka?: string }>>(rpvsSettled);
-    if (rpvsResult) {
-      zdrojeStatus.rpvs = rpvsResult.found && rpvsResult.data?.found
-        ? { status: "ok", durationMs: rpvsResult.durationMs }
-        : { status: rpvsResult.data?.found === false ? "not_found" : "error", durationMs: rpvsResult.durationMs, error: rpvsResult.error };
-    } else {
-      zdrojeStatus.rpvs = settledToStatus(rpvsSettled, null);
-    }
-
-    // --- Extract FinSpr ---
-    const finsprResult = unwrap<AdapterResult<{ ico: string; dph: { registrovany: boolean; icDph: string | null; paragraf: string | null; datumRegistracie: string | null; vymazany: boolean; dovodyZrusenia: string | null }; indexSpolahlivosti: string | null; danovyDlznik: boolean }>>(finsprSettled);
-    if (finsprResult && finsprResult.found && finsprResult.data) {
-      zdrojeStatus.finspr = { status: "ok", durationMs: finsprResult.durationMs };
-    } else {
-      zdrojeStatus.finspr = settledToStatus(finsprSettled, finsprResult);
-    }
-
-    // --- Extract REPLIK ---
-    const replikResult = unwrap<AdapterResult<{ ico: string; found: boolean; konania: Array<{ konanieId: string; spisovaZnacka: string | null; sud: string | null; druhKonania: string | null; stavKonania: string | null; datumZaciatku: string | null; datumUkoncenia: string | null }> }>>(replikSettled);
-    if (replikResult) {
-      zdrojeStatus.replik = replikResult.found
-        ? { status: "ok", durationMs: replikResult.durationMs }
-        : { status: replikResult.error ? "error" : "not_found", durationMs: replikResult.durationMs, error: replikResult.error };
-    } else {
-      zdrojeStatus.replik = settledToStatus(replikSettled, null);
-    }
-
-    // --- Extract ITMS ---
-    const itmsResult = unwrap<AdapterResult<{ ico: string; found: boolean; projekty: Array<unknown> }>>(itmsSettled);
-    if (itmsResult) {
-      zdrojeStatus.itms = itmsResult.found
-        ? { status: "ok", durationMs: itmsResult.durationMs }
-        : { status: "not_found", durationMs: itmsResult.durationMs };
-    } else {
-      zdrojeStatus.itms = settledToStatus(itmsSettled, null);
-    }
-
-    // Phase 2: VIES — needs DIČ from RPO/RUZ/FinSpr
+    // Phase 2: VIES — needs DIČ from FinSpr or RUZ
     const dic = finsprResult?.data?.dph?.icDph
       ?? ruzResult?.data?.uctovnaJednotka?.dic
       ?? null;
@@ -214,14 +191,12 @@ export class FullProfileOrchestrator {
     let viesData: { valid: boolean | null; nazov: string | null; adresa: string | null } | null = null;
     const elapsed = Date.now() - start;
     if (dic && elapsed < OVERALL_TIMEOUT_MS - 2000) {
-      // We have DIČ and enough time remaining
       const vatNumber = dic.startsWith("SK") ? dic : `SK${dic}`;
+      const remaining = OVERALL_TIMEOUT_MS - elapsed;
+      const { promise: viesTimeout, clear: clearViesTimeout } = createTimeout(remaining);
       try {
-        const remaining = OVERALL_TIMEOUT_MS - elapsed;
-        const viesResult = await Promise.race([
-          this.vies.checkVat(vatNumber),
-          new Promise<never>((_, reject) => setTimeout(() => reject(new Error("TIMEOUT")), remaining)),
-        ]);
+        const viesResult = await Promise.race([this.vies.checkVat(vatNumber), viesTimeout]);
+        clearViesTimeout();
         if (viesResult.found && viesResult.data) {
           zdrojeStatus.vies = { status: "ok", durationMs: viesResult.durationMs };
           viesData = {
@@ -233,8 +208,13 @@ export class FullProfileOrchestrator {
           zdrojeStatus.vies = { status: "error", durationMs: viesResult.durationMs, error: viesResult.error };
         }
       } catch (err) {
+        clearViesTimeout();
         const isTimeout = err instanceof Error && err.message === "TIMEOUT";
-        zdrojeStatus.vies = { status: isTimeout ? "timeout" : "error", durationMs: Date.now() - start - elapsed, error: isTimeout ? "Overall timeout" : String(err) };
+        zdrojeStatus.vies = {
+          status: isTimeout ? "timeout" : "error",
+          durationMs: Date.now() - start - elapsed,
+          error: isTimeout ? "Overall timeout" : String(err),
+        };
       }
     } else if (!dic) {
       zdrojeStatus.vies = { status: "not_found", durationMs: 0, error: "DIČ nedostupné — nemožno overiť VIES" };
@@ -259,7 +239,9 @@ export class FullProfileOrchestrator {
       sidlo: currentAddr
         ? {
             ulica: [currentAddr.street, currentAddr.buildingNumber].filter(Boolean).join(" ") || null,
-            mesto: typeof currentAddr.municipality === "object" ? (currentAddr.municipality as { value: string })?.value ?? null : null,
+            mesto: typeof currentAddr.municipality === "object"
+              ? (currentAddr.municipality as { value: string })?.value ?? null
+              : null,
             psc: currentAddr.postalCodes?.[0] ?? null,
           }
         : null,
@@ -274,7 +256,7 @@ export class FullProfileOrchestrator {
         .filter((a) => !a.validTo)
         .map((a) => a.economicActivityDescription),
       skNace: entity?.statisticalCodes?.mainActivity?.code
-        ?? (ruzResult?.data?.uctovnaJednotka as { skNace?: string | null } | undefined)?.skNace
+        ?? ruzResult?.data?.uctovnaJednotka?.skNace
         ?? null,
     };
 
@@ -359,7 +341,7 @@ export class FullProfileOrchestrator {
     };
 
     // --- Build eurofondy ---
-    const itmsData = itmsResult?.data as { found: boolean; projekty: Array<unknown> } | undefined;
+    const itmsData = itmsResult?.data;
     const eurofondy = {
       found: itmsData?.found ?? false,
       projekty: itmsData?.projekty ?? [],
@@ -389,17 +371,23 @@ export class FullProfileOrchestrator {
 
 // --- Helpers ---
 
+/** Create a timeout promise that can be cleaned up. */
+function createTimeout(ms: number): { promise: Promise<never>; clear: () => void } {
+  let timer: ReturnType<typeof setTimeout>;
+  const promise = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error("TIMEOUT")), ms);
+  });
+  return { promise, clear: () => clearTimeout(timer) };
+}
+
 /** Unwrap a PromiseSettledResult, returning null on rejection. */
 function unwrap<T>(settled: PromiseSettledResult<T>): T | null {
   if (settled.status === "fulfilled") return settled.value;
   return null;
 }
 
-/** Convert a settled promise + optional adapter result into a ZdrojStatusEntry. */
-function settledToStatus(
-  settled: PromiseSettledResult<unknown>,
-  result: { found?: boolean; durationMs?: number; error?: string; source?: string } | null,
-): ZdrojStatusEntry {
+/** Convert a settled promise into a ZdrojStatusEntry when no result is available. */
+function settledToStatus(settled: PromiseSettledResult<unknown>): ZdrojStatusEntry {
   if (settled.status === "rejected") {
     const isTimeout = settled.reason instanceof Error && settled.reason.message === "TIMEOUT";
     return {
@@ -408,7 +396,15 @@ function settledToStatus(
       error: isTimeout ? "Overall timeout (15s)" : String(settled.reason),
     };
   }
-  if (!result) return { status: "error", durationMs: 0, error: "No result" };
+  return { status: "error", durationMs: 0, error: "No result" };
+}
+
+/** Convert an AdapterResult (or adapter-like result) into a ZdrojStatusEntry. */
+function adapterToStatus(
+  settled: PromiseSettledResult<unknown>,
+  result: { found?: boolean; durationMs?: number; error?: string } | null,
+): ZdrojStatusEntry {
+  if (!result) return settledToStatus(settled);
   if (result.error) return { status: "error", durationMs: result.durationMs ?? 0, error: result.error };
   if (!result.found) return { status: "not_found", durationMs: result.durationMs ?? 0 };
   return { status: "ok", durationMs: result.durationMs ?? 0 };

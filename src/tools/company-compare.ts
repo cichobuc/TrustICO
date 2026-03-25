@@ -15,6 +15,9 @@ import {
 import { validateICO } from "../utils/validators.js";
 import type { Statutar, Spolocnik } from "../types/rpo.types.js";
 
+/** Title-stripping regex — matches common Slovak academic/professional titles. */
+const TITLE_RE = /^(Ing\.|Mgr\.|Bc\.|JUDr\.|MUDr\.|RNDr\.|PhDr\.|PaedDr\.|ThDr\.|MVDr\.|DrSc\.|doc\.|prof\.|PhD\.|CSc\.|MBA|Dipl\.)\s*/gi;
+
 type CompanyCompareEntry = {
   ico: string;
   nazov: string;
@@ -84,7 +87,10 @@ export function registerCompanyCompare(server: McpServer): void {
         const currentName = entity?.fullNames?.find((n) => !n.validTo)?.value
           ?? entity?.fullNames?.[0]?.value ?? ico;
 
-        return { ico, entity, people, fin, currentName };
+        // Determine active status from entity before discarding it
+        const aktivna = entity ? !!entity.fullNames?.some((n) => !n.validTo) : true;
+
+        return { ico, people, fin, currentName, aktivna };
       });
 
       const results = await Promise.allSettled(fetchPromises);
@@ -99,7 +105,7 @@ export function registerCompanyCompare(server: McpServer): void {
 
       for (const r of results) {
         if (r.status !== "fulfilled") continue;
-        const { ico, people, fin, currentName, entity } = r.value;
+        const { ico, people, fin, currentName, aktivna } = r.value;
 
         const ukazovatele = fin?.klucoveUkazovatele;
         firmy.push({
@@ -109,7 +115,7 @@ export function registerCompanyCompare(server: McpServer): void {
           zisk: ukazovatele?.vysledokHospodarenia ?? null,
           aktiva: ukazovatele?.aktivaCelkom ?? null,
           vlastneImanie: ukazovatele?.vlastneImanie ?? null,
-          aktivna: entity ? !entity.fullNames?.every((n) => n.validTo) : true,
+          aktivna,
           pocetZamestnancov: null,
         });
 
@@ -202,10 +208,7 @@ function normalizeName(meno: string | null, priezvisko: string | null): string |
   if (!meno && !priezvisko) return null;
 
   const clean = (s: string | null) =>
-    (s ?? "")
-      .replace(/^(Ing\.|Mgr\.|Bc\.|JUDr\.|MUDr\.|RNDr\.|PhDr\.|PaedDr\.|ThDr\.|MVDr\.|DrSc\.|doc\.|prof\.|PhD\.|CSc\.|MBA|Dipl\.)\s*/gi, "")
-      .trim()
-      .toLowerCase();
+    (s ?? "").replace(TITLE_RE, "").trim().toLowerCase();
 
   const m = clean(meno);
   const p = clean(priezvisko);
