@@ -29,7 +29,7 @@ import type {
 const RUZ_BASE_URL = "https://www.registeruz.sk/cruz-public";
 const SOURCE = "ruz";
 const ZMENENE_OD = "2000-01-01";
-const MAX_PDF_MB = 10;
+const MAX_PDF_MB = 5;
 const MAX_PDF_BYTES = MAX_PDF_MB * 1024 * 1024;
 
 // Template cache — templates rarely change, cache for 24h
@@ -170,7 +170,7 @@ export class RuzAdapter {
       const resp = await this.http.get<Buffer>(url, {
         source: SOURCE,
         raw: true,
-        timeoutMs: 15_000,
+        timeoutMs: 30_000,
         retries: 0,
       });
 
@@ -216,7 +216,7 @@ export class RuzAdapter {
       const resp = await this.http.get<Buffer>(url, {
         source: SOURCE,
         raw: true,
-        timeoutMs: 15_000,
+        timeoutMs: 30_000,
         retries: 0,
       });
 

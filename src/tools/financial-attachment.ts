@@ -26,7 +26,10 @@ export function registerFinancialAttachment(server: McpServer): void {
     },
     async ({ attachmentId, nazov, velkost, extractText: shouldExtract }) => {
       const start = Date.now();
-      const MAX_SIZE_BYTES = 10 * 1024 * 1024; // 10 MB
+      const MAX_SIZE_BYTES = 5 * 1024 * 1024; // 5 MB
+      // Base64 of large PDFs can overwhelm MCP transport / LLM context.
+      // Auto-extract text for files >1MB to keep responses manageable.
+      const AUTO_EXTRACT_THRESHOLD = 1 * 1024 * 1024; // 1 MB
 
       if (velkost && velkost > MAX_SIZE_BYTES) {
         return {
@@ -34,7 +37,7 @@ export function registerFinancialAttachment(server: McpServer): void {
           content: [{
             type: "text" as const,
             text: JSON.stringify({
-              error: `Príloha je príliš veľká (${Math.round(velkost / 1024 / 1024)}MB). Maximum je 10MB.`,
+              error: `Príloha je príliš veľká (${Math.round(velkost / 1024 / 1024)}MB). Maximum je 5MB.`,
               _meta: { source: "ruz", durationMs: Date.now() - start, timestamp: new Date().toISOString() },
             }, null, 2),
           }],
@@ -61,11 +64,13 @@ export function registerFinancialAttachment(server: McpServer): void {
           };
         }
 
-        // Optional text extraction
+        // Auto-extract text for large PDFs to avoid sending huge base64 blobs
+        const pdfBuffer = Buffer.from(result.data.content, "base64");
+        const doExtract = shouldExtract || pdfBuffer.length > AUTO_EXTRACT_THRESHOLD;
+
         let extractedText: PdfExtractionResult | null = null;
-        if (shouldExtract && result.data.mimeType.startsWith("application/pdf")) {
+        if (doExtract && result.data.mimeType.startsWith("application/pdf")) {
           try {
-            const pdfBuffer = Buffer.from(result.data.content, "base64");
             extractedText = await extractPdfText(pdfBuffer);
           } catch {
             // Extraction failed — still return the PDF
@@ -82,7 +87,7 @@ export function registerFinancialAttachment(server: McpServer): void {
               attachmentId,
               nazov: nazov ?? null,
               mimeType: result.data.mimeType,
-              velkost: velkost ?? null,
+              velkost: pdfBuffer.length,
               ...(hasText
                 ? { extractedText }
                 : { content: result.data.content }),
@@ -90,6 +95,9 @@ export function registerFinancialAttachment(server: McpServer): void {
                 source: "ruz",
                 durationMs: Date.now() - start,
                 timestamp: new Date().toISOString(),
+                ...(hasText && pdfBuffer.length > AUTO_EXTRACT_THRESHOLD
+                  ? { note: "Text extrahovaný automaticky — PDF bolo príliš veľké pre priamy prenos" }
+                  : {}),
               },
             }),
           }],
@@ -119,6 +127,7 @@ export function registerFinancialAttachment(server: McpServer): void {
     },
     async ({ reportId, extractText: shouldExtract }) => {
       const start = Date.now();
+      const AUTO_EXTRACT_THRESHOLD = 1 * 1024 * 1024; // 1 MB
 
       try {
         const result = await adapter.getReportPdf(reportId);
@@ -140,11 +149,13 @@ export function registerFinancialAttachment(server: McpServer): void {
           };
         }
 
-        // Optional text extraction
+        // Auto-extract text for large PDFs to avoid sending huge base64 blobs
+        const pdfBuffer = Buffer.from(result.data.content, "base64");
+        const doExtract = shouldExtract || pdfBuffer.length > AUTO_EXTRACT_THRESHOLD;
+
         let extractedText: PdfExtractionResult | null = null;
-        if (shouldExtract && result.data.mimeType.startsWith("application/pdf")) {
+        if (doExtract && result.data.mimeType.startsWith("application/pdf")) {
           try {
-            const pdfBuffer = Buffer.from(result.data.content, "base64");
             extractedText = await extractPdfText(pdfBuffer);
           } catch {
             // Extraction failed — still return the PDF
@@ -159,6 +170,7 @@ export function registerFinancialAttachment(server: McpServer): void {
             text: JSON.stringify({
               reportId,
               mimeType: result.data.mimeType,
+              velkost: pdfBuffer.length,
               ...(hasText
                 ? { extractedText }
                 : { content: result.data.content }),
@@ -166,6 +178,9 @@ export function registerFinancialAttachment(server: McpServer): void {
                 source: "ruz",
                 durationMs: Date.now() - start,
                 timestamp: new Date().toISOString(),
+                ...(hasText && pdfBuffer.length > AUTO_EXTRACT_THRESHOLD
+                  ? { note: "Text extrahovaný automaticky — PDF bolo príliš veľké pre priamy prenos" }
+                  : {}),
               },
             }),
           }],
