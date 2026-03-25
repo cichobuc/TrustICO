@@ -11,7 +11,7 @@ import {
 
 // --- Token Bucket Rate Limiter ---
 
-class TokenBucket {
+export class TokenBucket {
   private tokens: number;
   private lastRefill: number;
   private readonly maxTokens: number;
@@ -47,6 +47,38 @@ class TokenBucket {
     const newTokens = (elapsed / this.intervalMs) * this.maxTokens;
     this.tokens = Math.min(this.maxTokens, this.tokens + newTokens);
     this.lastRefill = now;
+  }
+}
+
+// --- SSRF Protection ---
+
+const ALLOWED_HOSTS = new Set([
+  "api.statistics.sk",
+  "www.registeruz.sk",
+  "registeruz.sk",
+  "rpvs.gov.sk",
+  "iz.opendata.financnasprava.sk",
+  "ec.europa.eu",
+  "replik-ws.justice.sk",
+  "data.slovensko.digital",
+  "opendata.itms2014.sk",
+]);
+
+function validateRequestUrl(url: string): void {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new Error(`Invalid URL: ${url}`);
+  }
+
+  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+    throw new Error(`Disallowed protocol: ${parsed.protocol}`);
+  }
+
+  const hostname = parsed.hostname.toLowerCase();
+  if (!ALLOWED_HOSTS.has(hostname)) {
+    throw new Error(`Request to disallowed host: ${hostname}`);
   }
 }
 
@@ -88,6 +120,9 @@ export class HttpClient {
       source,
       raw = false,
     } = options;
+
+    // SSRF protection — only allow known API hosts
+    validateRequestUrl(url);
 
     // Rate limiting
     if (source) {

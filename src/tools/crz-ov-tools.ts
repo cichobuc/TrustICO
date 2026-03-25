@@ -15,6 +15,8 @@ export function registerCrzOvTools(server: McpServer): void {
     "Detail zmluvy z Centrálneho registra zmlúv (CRZ) podľa interného ID. Vstup: ID zmluvy.",
     { contractId: z.number().int().positive().describe("Interné ID zmluvy v CRZ") },
     async ({ contractId }) => {
+      const start = Date.now();
+      try {
       const result = await datahub.getCRZContract(contractId);
 
       if (result.error) {
@@ -55,6 +57,18 @@ export function registerCrzOvTools(server: McpServer): void {
       return {
         content: [{ type: "text" as const, text: JSON.stringify(response, null, 2) }],
       };
+      } catch (err) {
+        return {
+          isError: true,
+          content: [{
+            type: "text" as const,
+            text: JSON.stringify({
+              error: err instanceof Error ? err.message : String(err),
+              _meta: { source: "datahub-crz", durationMs: Date.now() - start, timestamp: new Date().toISOString() },
+            }),
+          }],
+        };
+      }
     },
   );
 
@@ -67,6 +81,8 @@ export function registerCrzOvTools(server: McpServer): void {
       type: z.enum(["or_podanie", "konkurz", "likvidacia"]).describe("Typ podania"),
     },
     async ({ id, type }) => {
+      const start = Date.now();
+      try {
       const result = await datahub.getOVFiling(id, type);
 
       if (result.error) {
@@ -108,6 +124,18 @@ export function registerCrzOvTools(server: McpServer): void {
       return {
         content: [{ type: "text" as const, text: JSON.stringify(response, null, 2) }],
       };
+      } catch (err) {
+        return {
+          isError: true,
+          content: [{
+            type: "text" as const,
+            text: JSON.stringify({
+              error: err instanceof Error ? err.message : String(err),
+              _meta: { source: "datahub-ov", durationMs: Date.now() - start, timestamp: new Date().toISOString() },
+            }),
+          }],
+        };
+      }
     },
   );
 }

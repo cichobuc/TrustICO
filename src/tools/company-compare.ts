@@ -48,6 +48,7 @@ export function registerCompanyCompare(server: McpServer): void {
     async ({ icos }) => {
       const start = Date.now();
 
+      try {
       // Validate all IČOs
       const validated: string[] = [];
       for (const ico of icos) {
@@ -196,6 +197,18 @@ export function registerCompanyCompare(server: McpServer): void {
           text: JSON.stringify(result, null, 2),
         }],
       };
+      } catch (err) {
+        return {
+          isError: true,
+          content: [{
+            type: "text" as const,
+            text: JSON.stringify({
+              error: err instanceof Error ? err.message : String(err),
+              _meta: { source: "rpo+ruz", durationMs: Date.now() - start, timestamp: new Date().toISOString() },
+            }),
+          }],
+        };
+      }
     },
   );
 }

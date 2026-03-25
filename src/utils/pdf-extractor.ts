@@ -146,9 +146,18 @@ async function ocrFromPdf(
         // Per-page timeout prevents a single complex page from blocking forever
         const ocrText = await withTimeout(
           (async () => {
-            const imageBuffer = await renderPageAsImage(data, page, {
-              scale: RENDER_SCALE,
-            });
+            let imageBuffer: ArrayBuffer;
+            try {
+              imageBuffer = await renderPageAsImage(data, page, {
+                scale: RENDER_SCALE,
+              });
+            } catch (renderErr) {
+              // @napi-rs/canvas may not be available (native binary missing)
+              throw new Error(
+                `Page render failed (${renderErr instanceof Error ? renderErr.message : String(renderErr)}). ` +
+                `Ensure @napi-rs/canvas is installed for OCR support.`,
+              );
+            }
             const { data: ocrData } = await worker.recognize(
               Buffer.from(imageBuffer),
             );

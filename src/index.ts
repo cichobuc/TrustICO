@@ -11,7 +11,11 @@ const PORT = parseInt(process.env.PORT || "3000", 10);
 const MCP_API_KEY = process.env.MCP_API_KEY;
 
 if (!MCP_API_KEY) {
-  logger.warn("MCP_API_KEY not set — authentication disabled");
+  if (process.env.NODE_ENV === "production") {
+    logger.error("MCP_API_KEY is required in production — refusing to start without authentication");
+    process.exit(1);
+  }
+  logger.warn("MCP_API_KEY not set — authentication disabled (development only)");
 }
 
 const transports = new Map<string, StreamableHTTPServerTransport>();

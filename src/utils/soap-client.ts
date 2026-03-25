@@ -7,7 +7,8 @@
  */
 
 import { createClientAsync, type Client } from "soap";
-import { SOURCE_RATE_LIMITS, type RateLimitConfig } from "../types/common.types.js";
+import { SOURCE_RATE_LIMITS } from "../types/common.types.js";
+import { TokenBucket } from "./http-client.js";
 
 const REPLIK_WSDL_BASE = "https://replik-ws.justice.sk/replik";
 
@@ -19,10 +20,10 @@ const SOAP_RETRIES = 1;
 const BACKOFF_BASE_MS = 500;
 
 /**
- * Pre-validate that a WSDL URL returns XML, not HTML (login page, error page).
- * Throws a descriptive error if the response is not XML.
+ * Fetch and validate WSDL URL. Returns the WSDL XML body for reuse.
+ * Throws a descriptive error if the response is HTML or invalid.
  */
-async function validateWsdlUrl(wsdlUrl: string): Promise<void> {
+async function fetchAndValidateWsdl(wsdlUrl: string): Promise<string> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), SOAP_TIMEOUT_MS);
   try {
@@ -62,36 +63,14 @@ async function validateWsdlUrl(wsdlUrl: string): Promise<void> {
         `Content-Type: ${contentType}. Prvých 200 znakov: ${body.slice(0, 200)}`,
       );
     }
+
+    return body;
   } finally {
     clearTimeout(timer);
   }
 }
 
-// --- Token bucket rate limiter (shared pattern with HttpClient) ---
-
-class TokenBucket {
-  private tokens: number;
-  private lastRefill: number;
-  constructor(private readonly config: RateLimitConfig) {
-    this.tokens = config.maxTokens;
-    this.lastRefill = Date.now();
-  }
-  async acquire(): Promise<void> {
-    this.refill();
-    if (this.tokens > 0) { this.tokens--; return; }
-    const waitMs = this.config.intervalMs / this.config.maxTokens;
-    await new Promise((resolve) => setTimeout(resolve, waitMs));
-    this.refill();
-    this.tokens = Math.max(0, this.tokens - 1);
-  }
-  private refill(): void {
-    const now = Date.now();
-    const elapsed = now - this.lastRefill;
-    const newTokens = (elapsed / this.config.intervalMs) * this.config.maxTokens;
-    this.tokens = Math.min(this.config.maxTokens, this.tokens + newTokens);
-    this.lastRefill = now;
-  }
-}
+// --- Rate limiting (using shared TokenBucket from http-client) ---
 
 const replikBucket = new TokenBucket(
   SOURCE_RATE_LIMITS["replik"] ?? { maxTokens: 20, intervalMs: 60_000 },
@@ -105,8 +84,9 @@ function getClient(wsdlUrl: string): Promise<Client> {
   let p = clientPromises.get(wsdlUrl);
   if (!p) {
     p = (async () => {
-      // Pre-validate WSDL to catch HTML responses, auth errors, etc.
-      await validateWsdlUrl(wsdlUrl);
+      // Pre-validate WSDL — catches HTML login pages, auth errors, etc.
+      // with clear error messages. Double-fetch is acceptable: cached once per service.
+      await fetchAndValidateWsdl(wsdlUrl);
       return createClientAsync(wsdlUrl, {
         wsdl_options: { timeout: SOAP_TIMEOUT_MS },
       });
@@ -127,6 +107,23 @@ function timeoutPromise(ms: number): Promise<never> {
   );
 }
 
+// --- Input sanitization ---
+
+/** Strip XML special characters from SOAP arguments to prevent injection. */
+function sanitizeArgs(args: Record<string, unknown>): Record<string, unknown> {
+  const sanitized: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(args)) {
+    if (typeof value === "string") {
+      // Remove XML special chars and control characters
+      // eslint-disable-next-line no-control-regex
+      sanitized[key] = value.replace(/[<>&'"]/g, "").replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, "");
+    } else {
+      sanitized[key] = value;
+    }
+  }
+  return sanitized;
+}
+
 // --- Core SOAP call with timeout, rate limiting, and retry ---
 
 async function callService<T>(
@@ -134,6 +131,7 @@ async function callService<T>(
   operation: string,
   args: Record<string, unknown>,
 ): Promise<T> {
+  const safeArgs = sanitizeArgs(args);
   let lastError: Error | undefined;
 
   for (let attempt = 0; attempt <= SOAP_RETRIES; attempt++) {
@@ -151,7 +149,7 @@ async function callService<T>(
         throw new Error(`SOAP operation ${operation} not found`);
       }
 
-      const callPromise = (client as Record<string, (...a: unknown[]) => Promise<unknown[]>>)[methodName](args);
+      const callPromise = (client as Record<string, (...a: unknown[]) => Promise<unknown[]>>)[methodName](safeArgs);
       const [result] = await Promise.race([callPromise, timeoutPromise(SOAP_TIMEOUT_MS)]);
       return result as T;
     } catch (err) {

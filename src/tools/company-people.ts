@@ -16,6 +16,8 @@ export function registerCompanyPeople(server: McpServer): void {
     "Všetky osoby vo firme — štatutári, spoločníci, vklady, spôsob konania. Vstup: 8-miestne IČO.",
     { ico: z.string().describe("8-miestne IČO firmy") },
     async ({ ico }) => {
+      const start = Date.now();
+      try {
       const validation = validateICO(ico);
       if (!validation.valid) {
         return {
@@ -30,7 +32,6 @@ export function registerCompanyPeople(server: McpServer): void {
         };
       }
 
-      const start = Date.now();
       const entityResult = await rpo.getEntityByIco(validation.normalized);
 
       if (!entityResult.found || !entityResult.data) {
@@ -61,6 +62,18 @@ export function registerCompanyPeople(server: McpServer): void {
           }, null, 2),
         }],
       };
+      } catch (err) {
+        return {
+          isError: true,
+          content: [{
+            type: "text" as const,
+            text: JSON.stringify({
+              error: err instanceof Error ? err.message : String(err),
+              _meta: { source: "rpo", durationMs: Date.now() - start, timestamp: new Date().toISOString() },
+            }),
+          }],
+        };
+      }
     },
   );
 }

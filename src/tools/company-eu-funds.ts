@@ -15,6 +15,8 @@ export function registerCompanyEuFunds(server: McpServer): void {
     "Eurofondy (ITMS2014+) — projekty financované z EÚ fondov pre danú firmu. Best-effort search, môže byť pomalší. Vstup: 8-miestne IČO.",
     { ico: z.string().describe("8-miestne IČO firmy") },
     async ({ ico }) => {
+      const start = Date.now();
+      try {
       const validation = validateICO(ico);
       if (!validation.valid) {
         return {
@@ -56,6 +58,18 @@ export function registerCompanyEuFunds(server: McpServer): void {
       return {
         content: [{ type: "text" as const, text: JSON.stringify(response, null, 2) }],
       };
+      } catch (err) {
+        return {
+          isError: true,
+          content: [{
+            type: "text" as const,
+            text: JSON.stringify({
+              error: err instanceof Error ? err.message : String(err),
+              _meta: { source: "itms", durationMs: Date.now() - start, timestamp: new Date().toISOString() },
+            }),
+          }],
+        };
+      }
     },
   );
 }

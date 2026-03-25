@@ -15,6 +15,8 @@ export function registerCompanyHistory(server: McpServer): void {
     "História zmien firmy — zmeny názvov, adries, štatutárov, spoločníkov. Vstup: 8-miestne IČO.",
     { ico: z.string().describe("8-miestne IČO firmy") },
     async ({ ico }) => {
+      const start = Date.now();
+      try {
       const validation = validateICO(ico);
       if (!validation.valid) {
         return {
@@ -29,7 +31,6 @@ export function registerCompanyHistory(server: McpServer): void {
         };
       }
 
-      const start = Date.now();
       const entityResult = await rpo.getEntityByIco(validation.normalized, true);
 
       if (!entityResult.found || !entityResult.data) {
@@ -60,6 +61,18 @@ export function registerCompanyHistory(server: McpServer): void {
           }, null, 2),
         }],
       };
+      } catch (err) {
+        return {
+          isError: true,
+          content: [{
+            type: "text" as const,
+            text: JSON.stringify({
+              error: err instanceof Error ? err.message : String(err),
+              _meta: { source: "rpo", durationMs: Date.now() - start, timestamp: new Date().toISOString() },
+            }),
+          }],
+        };
+      }
     },
   );
 }

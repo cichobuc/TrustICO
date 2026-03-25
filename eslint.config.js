@@ -2,6 +2,9 @@ import eslint from "@eslint/js";
 import tseslint from "typescript-eslint";
 
 export default tseslint.config(
+  {
+    ignores: ["dist/", "node_modules/", "tests/"],
+  },
   eslint.configs.recommended,
   ...tseslint.configs.recommended,
   {
@@ -15,10 +18,7 @@ export default tseslint.config(
       "no-console": "off",
       "prefer-const": "error",
       "no-var": "error",
-      eqeqeq: ["error", "always"],
+      eqeqeq: ["error", "always", { null: "ignore" }],
     },
-  },
-  {
-    ignores: ["dist/", "node_modules/", "tests/"],
   },
 );
