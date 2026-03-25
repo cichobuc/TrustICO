@@ -304,7 +304,7 @@ export function extractKlucoveUkazovatele(
 
 /** Safe division — returns null if divisor is 0 or either operand is null. Rounds to 4 decimals. */
 function safeDiv(numerator: number | null, denominator: number | null): number | null {
-  if (numerator == null || denominator == null || denominator === 0) return null;
+  if (numerator === null || numerator === undefined || denominator === null || denominator === undefined || denominator === 0) return null;
   return Math.round((numerator / denominator) * 10000) / 10000;
 }
 

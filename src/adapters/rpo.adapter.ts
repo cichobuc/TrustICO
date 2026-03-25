@@ -20,7 +20,6 @@ import type {
   RpoEntityDetail,
   RpoAddress,
   RpoPersonName,
-  RpoStakeholder,
   RpoDeposit,
   CompanySearchResult,
   CompanyPeopleResult,

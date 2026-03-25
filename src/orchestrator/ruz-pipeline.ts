@@ -95,7 +95,7 @@ export class RuzPipeline {
 
     // Filter by year if requested (exact 4-digit year match)
     let filteredStatements = allStatements;
-    if (year != null) {
+    if (year !== undefined && year !== null) {
       const yearStr = String(year);
       filteredStatements = allStatements.filter((s) => {
         const endYear = s.obdobieDo?.substring(0, 4);
@@ -161,7 +161,7 @@ export class RuzPipeline {
     if (mappedStatements.length > 0) {
       const latestStatement = mappedStatements[0];
       const reportsWithTemplates = latestStatement.vykazy.filter(
-        (v) => v.idSablony != null,
+        (v) => v.idSablony !== undefined && v.idSablony !== null,
       );
 
       if (reportsWithTemplates.length > 0) {

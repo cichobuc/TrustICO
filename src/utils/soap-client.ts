@@ -18,6 +18,55 @@ const SOAP_TIMEOUT_MS = 8_000;
 const SOAP_RETRIES = 1;
 const BACKOFF_BASE_MS = 500;
 
+/**
+ * Pre-validate that a WSDL URL returns XML, not HTML (login page, error page).
+ * Throws a descriptive error if the response is not XML.
+ */
+async function validateWsdlUrl(wsdlUrl: string): Promise<void> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), SOAP_TIMEOUT_MS);
+  try {
+    const resp = await fetch(wsdlUrl, {
+      method: "GET",
+      signal: controller.signal,
+      headers: { Accept: "text/xml, application/xml" },
+    });
+
+    if (!resp.ok) {
+      throw new Error(
+        `IS REPLIK WSDL vrátil HTTP ${resp.status} ${resp.statusText}. ` +
+        `Server pravdepodobne vyžaduje autentifikáciu alebo je nedostupný.`,
+      );
+    }
+
+    const contentType = resp.headers.get("content-type") ?? "";
+    const body = await resp.text();
+
+    // Check if response is HTML instead of XML
+    if (
+      contentType.includes("text/html") ||
+      body.trimStart().startsWith("<!DOCTYPE") ||
+      body.trimStart().startsWith("<html")
+    ) {
+      throw new Error(
+        `IS REPLIK WSDL vrátil HTML namiesto XML (Content-Type: ${contentType}). ` +
+        `Server pravdepodobne vrátil login stránku alebo chybovú stránku. ` +
+        `Skontrolujte prístupové údaje a sieťovú konektivitu k replik-ws.justice.sk.`,
+      );
+    }
+
+    // Verify it looks like XML/WSDL
+    if (!body.includes("<wsdl:") && !body.includes("<definitions") && !body.includes("<?xml")) {
+      throw new Error(
+        `IS REPLIK WSDL response nie je platný WSDL XML dokument. ` +
+        `Content-Type: ${contentType}. Prvých 200 znakov: ${body.slice(0, 200)}`,
+      );
+    }
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 // --- Token bucket rate limiter (shared pattern with HttpClient) ---
 
 class TokenBucket {
@@ -55,9 +104,13 @@ const clientPromises = new Map<string, Promise<Client>>();
 function getClient(wsdlUrl: string): Promise<Client> {
   let p = clientPromises.get(wsdlUrl);
   if (!p) {
-    p = createClientAsync(wsdlUrl, {
-      wsdl_options: { timeout: SOAP_TIMEOUT_MS },
-    }).catch((err) => {
+    p = (async () => {
+      // Pre-validate WSDL to catch HTML responses, auth errors, etc.
+      await validateWsdlUrl(wsdlUrl);
+      return createClientAsync(wsdlUrl, {
+        wsdl_options: { timeout: SOAP_TIMEOUT_MS },
+      });
+    })().catch((err) => {
       clientPromises.delete(wsdlUrl); // allow retry on WSDL fetch failure
       throw err;
     });
