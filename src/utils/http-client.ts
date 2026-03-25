@@ -144,7 +144,13 @@ export class HttpClient {
           if (contentType.includes("/json") || contentType.includes("+json")) {
             data = (await response.json()) as T;
           } else {
-            data = (await response.text()) as T;
+            // Some APIs return JSON with non-JSON content-type — try parsing
+            const text = await response.text();
+            try {
+              data = JSON.parse(text) as T;
+            } catch {
+              data = text as T;
+            }
           }
         }
 
