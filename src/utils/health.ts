@@ -95,12 +95,12 @@ async function pingSource(target: typeof PING_TARGETS[number]): Promise<SourceHe
 export async function checkHealth(): Promise<HealthResult> {
   // Add FinSpr only if API key is configured
   const targets = [...PING_TARGETS];
-  const finsrpKey = process.env.FINSPR_API_KEY;
-  if (finsrpKey) {
+  const finsprKey = process.env.FINSPR_API_KEY;
+  if (finsprKey) {
     targets.push({
       source: "finspr",
       url: "https://iz.opendata.financnasprava.sk/api/data/ds_dphs/search?column=ico&search=36421928&page=1",
-      headers: { key: finsrpKey },
+      headers: { key: finsprKey },
     });
   }
 

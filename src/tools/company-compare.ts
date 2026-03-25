@@ -158,7 +158,7 @@ export function registerCompanyCompare(server: McpServer): void {
       }
 
       // Filter to only people appearing in 2+ companies
-      const personalnePrepoojenia: PersonalnePrepojenie[] = [];
+      const personalnePrepojenia: PersonalnePrepojenie[] = [];
       for (const [key, entries] of personMap) {
         const uniqueIcos = new Set(entries.map((e) => e.ico));
         if (uniqueIcos.size < 2) continue;
@@ -173,7 +173,7 @@ export function registerCompanyCompare(server: McpServer): void {
           }
         }
 
-        personalnePrepoojenia.push({
+        personalnePrepojenia.push({
           osoba: key,
           firmy: deduped,
         });
@@ -181,8 +181,8 @@ export function registerCompanyCompare(server: McpServer): void {
 
       const result = {
         firmy,
-        personalnePrepoojenia,
-        pocetPrepojeni: personalnePrepoojenia.length,
+        personalnePrepojenia,
+        pocetPrepojeni: personalnePrepojenia.length,
         _meta: {
           source: "rpo+ruz",
           durationMs: Date.now() - start,

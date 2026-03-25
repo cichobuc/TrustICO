@@ -1,5 +1,6 @@
 import "dotenv/config";
 import { createServer } from "node:http";
+import { timingSafeEqual } from "node:crypto";
 import { createMcpServer } from "./server.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
@@ -30,7 +31,9 @@ function authenticate(
   }
 
   const token = authHeader.slice(7);
-  if (token !== MCP_API_KEY) {
+  const tokenBuf = Buffer.from(token);
+  const keyBuf = Buffer.from(MCP_API_KEY);
+  if (tokenBuf.length !== keyBuf.length || !timingSafeEqual(tokenBuf, keyBuf)) {
     res.writeHead(403, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ error: "Invalid API key" }));
     return false;
@@ -161,10 +164,21 @@ const httpServer = createServer(async (req, res) => {
   res.end(JSON.stringify({ error: "Not found" }));
 });
 
+const MAX_BODY_BYTES = 1024 * 1024; // 1 MB
+
 function readBody(req: import("node:http").IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
-    req.on("data", (chunk: Buffer) => chunks.push(chunk));
+    let totalSize = 0;
+    req.on("data", (chunk: Buffer) => {
+      totalSize += chunk.length;
+      if (totalSize > MAX_BODY_BYTES) {
+        req.destroy();
+        reject(new Error("Request body too large"));
+        return;
+      }
+      chunks.push(chunk);
+    });
     req.on("end", () => resolve(Buffer.concat(chunks).toString("utf-8")));
     req.on("error", reject);
   });

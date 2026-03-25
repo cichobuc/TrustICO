@@ -704,7 +704,7 @@ Porovnanie 2–10 firiem + personálne prepojenia.
       "pocetZamestnancov": null
     }
   ],
-  "personalnePrepoojenia": [
+  "personalnePrepojenia": [
     {
       "osoba": "Ing. Peter Novák",
       "firmy": [
