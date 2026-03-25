@@ -58,7 +58,7 @@ export type HttpResponse<T = unknown> = {
 
 /** Per-source rate limit presets (from CLAUDE.md). */
 export const SOURCE_RATE_LIMITS: Record<string, RateLimitConfig> = {
-  rpo: { maxTokens: 12, intervalMs: 60_000 },
+  rpo: { maxTokens: 30, intervalMs: 60_000 },
   ruz: { maxTokens: 30, intervalMs: 60_000 },
   rpvs: { maxTokens: 20, intervalMs: 60_000 },
   finspr: { maxTokens: 15, intervalMs: 60_000 },
