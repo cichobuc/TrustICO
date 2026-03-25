@@ -112,17 +112,26 @@ function withSoapTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
 
 // --- Input sanitization ---
 
-/** Strip XML special characters from SOAP arguments to prevent injection. */
+/** Strip XML special characters from SOAP arguments to prevent injection (recursive). */
+function sanitizeValue(value: unknown): unknown {
+  if (typeof value === "string") {
+    // Remove XML special chars and control characters
+    // eslint-disable-next-line no-control-regex
+    return value.replace(/[<>&'"]/g, "").replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, "");
+  }
+  if (Array.isArray(value)) {
+    return value.map(sanitizeValue);
+  }
+  if (value !== null && typeof value === "object") {
+    return sanitizeArgs(value as Record<string, unknown>);
+  }
+  return value;
+}
+
 function sanitizeArgs(args: Record<string, unknown>): Record<string, unknown> {
   const sanitized: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(args)) {
-    if (typeof value === "string") {
-      // Remove XML special chars and control characters
-      // eslint-disable-next-line no-control-regex
-      sanitized[key] = value.replace(/[<>&'"]/g, "").replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, "");
-    } else {
-      sanitized[key] = value;
-    }
+    sanitized[key] = sanitizeValue(value);
   }
   return sanitized;
 }

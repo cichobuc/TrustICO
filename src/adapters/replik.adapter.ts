@@ -1,12 +1,14 @@
 /**
  * Adapter for IS REPLIK (insolvenčné konania).
- * Endpoint: replik-ws.justice.sk SOAP 1.1
+ * Endpoint: replik-ws.justice.sk/ru-verejnost-ws SOAP 1.1
  *
- * Quirks (from CLAUDE.md):
- * - SOAP 1.1 — konanieService and oznamService
- * - Search by IČO: operation vyhladajKonania with parameter ico
- * - Detail: operation getKonanieDetail with parameter konanieId
- * - Notices: operation vyhladajOznamy with parameter ico
+ * IS REPLIK v2 (od 1.10.2025) — nahradil starý "Register úpadcov".
+ * Operácie (v1.0.7):
+ * - Search by IČO: `getKonaniePodlaICO` s parametrom `ico`
+ * - Detail: `getKonanieDetail` s parametrom `konanieId`
+ * - Notices: `vyhladajOznamy` s parametrom `ico` (oznamService)
+ * - Full-text: `vyhladajKonanie` (paginovaný)
+ * - Ďalšie: `getKonanieDetailPodlaZnackyASudu`, `getKonaniePreObdobie`, `getZoznamSudov`
  */
 
 import { callKonanieService, callOznamService } from "../utils/soap-client.js";
@@ -41,7 +43,7 @@ export class ReplikAdapter {
     const start = Date.now();
     try {
       const resp = await callKonanieService<ReplikKonaniaResponse>(
-        "vyhladajKonania",
+        "getKonaniePodlaICO",
         { ico },
       );
 

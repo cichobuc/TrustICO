@@ -107,7 +107,7 @@ export async function checkHealth(): Promise<HealthResult> {
   // REPLIK is SOAP — just check if the WSDL endpoint is reachable
   targets.push({
     source: "replik",
-    url: "https://replik-ws.justice.sk/konanieService?wsdl",
+    url: "https://replik-ws.justice.sk/ru-verejnost-ws/konanieService.wsdl",
   });
 
   const results = await Promise.allSettled(targets.map(pingSource));

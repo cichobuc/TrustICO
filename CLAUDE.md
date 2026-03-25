@@ -127,10 +127,16 @@ Každý adapter je trieda s týmito pravidlami:
 - Production WSDL: `https://replik-ws.justice.sk/ru-verejnost-ws/konanieService.wsdl`
 - Production WSDL: `https://replik-ws.justice.sk/ru-verejnost-ws/oznamService.wsdl`
 - Test WSDL: `https://replik-wst.justice.sk/ru-verejnost-ws/konanieService.wsdl`
-- **Autentifikácia NIE JE potrebná** — verejné API bez registrácie
-- Search by IČO: operácia `vyhladajKonania` s parametrom `ico`
+- **Autentifikácia NIE JE potrebná**, ale vyžaduje **registráciu IP adresy** na Ministerstve spravodlivosti
+- Kontakt pre registráciu IP: https://www.justice.gov.sk/ministerstvo/kontakty/kontaktny-formular-pre-nahlasenie-problemu/?IS=RU
+- **Search by IČO: operácia `getKonaniePodlaICO`** s parametrom `ico` (v1.0.7, nahradil `vyhladajKonania`)
 - Detail: operácia `getKonanieDetail` s parametrom `konanieId`
-- Integračný manuál: https://www.justice.gov.sk/sluzby/register-predinsolvencnych-likvidacnych-a-insolvencnych-konani/prirucky-a-manualy-k-is-replik/
+- Detail podľa značky: `getKonanieDetailPodlaZnackyASudu`
+- Konania za obdobie: `getKonaniePreObdobie`
+- Zoznam súdov: `getZoznamSudov`
+- Full-text search: `vyhladajKonanie` (paginovaný, iný ako ICO search!)
+- Oznamy: `vyhladajOznamy` s parametrom `ico` (oznamService)
+- Integračný manuál v1.0.7: https://www.justice.gov.sk/sluzby/register-predinsolvencnych-likvidacnych-a-insolvencnych-konani/prirucky-a-manualy-k-is-replik/
 
 ### DataHub slovensko.digital
 - Používa **interné ID**, nie IČO — pre IČO lookup radšej ŠÚSR RPO
