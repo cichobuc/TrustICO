@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: trustico-mcp
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    region: frankfurt
+    plan: starter
+    healthCheckPath: /health
+    envVars:
+      - key: PORT
+        value: "3000"
+      - key: NODE_ENV
+        value: production
+      - key: LOG_LEVEL
+        value: info
+      - key: MCP_API_KEY
+        sync: false
+      - key: FINSPR_API_KEY
+        sync: false

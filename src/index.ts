@@ -3,12 +3,14 @@ import { createServer } from "node:http";
 import { createMcpServer } from "./server.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
+import { logger } from "./utils/logger.js";
+import { checkHealth } from "./utils/health.js";
 
 const PORT = parseInt(process.env.PORT || "3000", 10);
 const MCP_API_KEY = process.env.MCP_API_KEY;
 
 if (!MCP_API_KEY) {
-  console.warn("WARNING: MCP_API_KEY not set — authentication disabled");
+  logger.warn("MCP_API_KEY not set — authentication disabled");
 }
 
 const transports = new Map<string, StreamableHTTPServerTransport>();
@@ -42,8 +44,16 @@ const httpServer = createServer(async (req, res) => {
 
   // Health check — no auth required
   if (req.method === "GET" && url.pathname === "/health") {
-    res.writeHead(200, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ status: "ok", timestamp: new Date().toISOString() }));
+    try {
+      const health = await checkHealth();
+      const statusCode = health.status === "ok" ? 200 : health.status === "degraded" ? 200 : 503;
+      res.writeHead(statusCode, { "Content-Type": "application/json" });
+      res.end(JSON.stringify(health));
+    } catch (err) {
+      logger.error("health check failed", { error: err instanceof Error ? err.message : String(err) });
+      res.writeHead(503, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ status: "down", error: "Health check failed" }));
+    }
     return;
   }
 
@@ -141,7 +151,9 @@ function readBody(req: import("node:http").IncomingMessage): Promise<string> {
 }
 
 httpServer.listen(PORT, () => {
-  console.log(`TrustICO MCP server listening on port ${PORT}`);
-  console.log(`  Health: http://localhost:${PORT}/health`);
-  console.log(`  MCP:    http://localhost:${PORT}/mcp`);
+  logger.info("TrustICO MCP server started", {
+    port: PORT,
+    health: `http://localhost:${PORT}/health`,
+    mcp: `http://localhost:${PORT}/mcp`,
+  });
 });
