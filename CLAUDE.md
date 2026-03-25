@@ -160,7 +160,6 @@ FINSPR_API_KEY=              # Finančná správa API kľúč (povinný pre FS e
 MCP_API_KEY=                 # Bearer token pre prístup k MCP serveru
 NODE_ENV=production          # production / development
 LOG_LEVEL=info               # debug / info / warn / error
-TESSERACT_LANG_PATH=         # Cesta k tessdata (OCR modely). V Dockeri: /app/tessdata
 ```
 
 ## Rate Limiting (interný, per-source)

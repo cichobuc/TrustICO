@@ -1,16 +1,12 @@
 /**
  * PDF text extraction utility.
  *
- * Strategy (3 phases):
+ * Strategy:
  * 1. Native text extraction via pdf-parse (fast, works for text PDFs)
- * 2. If that yields < 20 chars → return PDF as-is for Claude to read visually
- * 3. Only if `ocr: true` is explicitly requested → run OCR via tesseract.js
+ * 2. If no copyable text found → return "none" so Claude reads the PDF visually
+ *    from the embedded resource blob
  *
- * Phase 2 is the default for scanned PDFs — Claude can read them natively
- * as embedded resources. OCR is opt-in for cases where structured text is needed.
- *
- * Heavy deps (pdfjs-dist, canvas, tesseract.js) are dynamically imported
- * only when OCR is needed — no cold start penalty for text PDFs.
+ * Claude is multimodal and reads scanned PDFs natively — no OCR needed.
  */
 
 import { PDFParse } from "pdf-parse";
@@ -27,24 +23,12 @@ const MIN_TEXT_CHARS = 20;
 /** Timeout for native text extraction. */
 const TEXT_EXTRACTION_TIMEOUT_MS = 15_000;
 
-/** Timeout for OCR (per page). */
-const OCR_PER_PAGE_TIMEOUT_MS = 15_000;
-
-/** Timeout for total OCR process (all pages). */
-const OCR_TOTAL_TIMEOUT_MS = 120_000;
-
-/** Max pages to OCR — prevents excessively long processing. */
-const OCR_MAX_PAGES = 20;
-
-/** DPI for rendering PDF pages to images for OCR. */
-const OCR_RENDER_DPI = 200;
-
 export interface PdfExtractResult {
   text: string;
   pages: number;
   truncated: boolean;
   totalTextLength: number;
-  method: "text" | "ocr" | "none";
+  method: "text" | "none";
   error?: string;
 }
 
@@ -57,23 +41,16 @@ function createTimeout(ms: number, reason: string): { promise: Promise<never>; c
   return { promise, clear: () => clearTimeout(timer) };
 }
 
-export interface PdfExtractOptions {
-  /** Run OCR for scanned PDFs. Default: false (let Claude read visually). */
-  ocr?: boolean;
-}
-
 /**
  * Extract text from a base64-encoded PDF.
  *
- * Phase 1: Native text extraction (always runs, fast).
- * Phase 2: If no text found → returns "none" so Claude reads the PDF visually.
- * Phase 3: If `ocr: true` → runs OCR via tesseract.js as last resort.
+ * Tries native text extraction. If the PDF is scanned (no copyable text),
+ * returns method "none" — the caller should provide the PDF as an embedded
+ * resource for Claude to read visually.
  *
  * Never throws.
  */
-export async function extractTextFromPdf(base64: string, options: PdfExtractOptions = {}): Promise<PdfExtractResult> {
-  const { ocr = false } = options;
-
+export async function extractTextFromPdf(base64: string): Promise<PdfExtractResult> {
   // Guard against excessively large inputs
   if (base64.length > MAX_BASE64_LENGTH) {
     return {
@@ -86,37 +63,7 @@ export async function extractTextFromPdf(base64: string, options: PdfExtractOpti
     };
   }
 
-  // Decode base64 once — shared between native extraction and OCR
   const buf = Buffer.from(base64, "base64");
-
-  // Phase 1: Try native text extraction (fast)
-  const textResult = await extractNativeText(buf);
-
-  // If we got enough text, return it
-  if (!textResult.error && textResult.text.length > 0) {
-    return { ...textResult, method: "text" };
-  }
-
-  // Phase 2: No text found → by default, let Claude read the PDF visually
-  if (!ocr) {
-    return {
-      text: "",
-      pages: textResult.pages,
-      truncated: false,
-      totalTextLength: 0,
-      method: "none",
-      error: "PDF neobsahuje kopírovateľný text (pravdepodobne sken). Claude ho prečíta vizuálne z priloženého PDF.",
-    };
-  }
-
-  // Phase 3: OCR explicitly requested
-  const ocrResult = await extractOcrText(buf, textResult.pages);
-  return ocrResult;
-}
-
-// --- Phase 1: Native text extraction ---
-
-async function extractNativeText(buf: Buffer): Promise<Omit<PdfExtractResult, "method">> {
   let parser: PDFParse | null = null;
 
   try {
@@ -140,7 +87,8 @@ async function extractNativeText(buf: Buffer): Promise<Omit<PdfExtractResult, "m
         pages,
         truncated: false,
         totalTextLength: 0,
-        error: "native-empty",
+        method: "none",
+        error: "PDF neobsahuje kopírovateľný text (pravdepodobne sken). Claude ho prečíta vizuálne z priloženého PDF.",
       };
     }
 
@@ -149,7 +97,7 @@ async function extractNativeText(buf: Buffer): Promise<Omit<PdfExtractResult, "m
     const truncated = cleaned.length > MAX_TEXT_LENGTH;
     const text = truncated ? cleaned.slice(0, MAX_TEXT_LENGTH) : cleaned;
 
-    return { text, pages, truncated, totalTextLength: cleaned.length };
+    return { text, pages, truncated, totalTextLength: cleaned.length, method: "text" };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     return {
@@ -157,6 +105,7 @@ async function extractNativeText(buf: Buffer): Promise<Omit<PdfExtractResult, "m
       pages: 0,
       truncated: false,
       totalTextLength: 0,
+      method: "none",
       error: msg === "TEXT_TIMEOUT"
         ? `Extrakcia textu trvala príliš dlho (timeout ${TEXT_EXTRACTION_TIMEOUT_MS / 1000}s)`
         : `Nepodarilo sa extrahovať text: ${msg}`,
@@ -164,151 +113,6 @@ async function extractNativeText(buf: Buffer): Promise<Omit<PdfExtractResult, "m
   } finally {
     if (parser) {
       try { await parser.destroy(); } catch { /* ignore */ }
-    }
-  }
-}
-
-// --- Phase 2: OCR fallback (heavy deps loaded dynamically) ---
-
-async function extractOcrText(buf: Buffer, knownPages: number): Promise<PdfExtractResult> {
-  // Dynamic imports — only loaded when OCR is actually needed
-  const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
-  const { createCanvas } = await import("canvas");
-  const Tesseract = (await import("tesseract.js")).default;
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let doc: any = null;
-  let worker: Tesseract.Worker | null = null;
-  const ocrStart = Date.now();
-
-  try {
-    const data = new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength);
-    doc = await pdfjs.getDocument({ data, verbosity: 0 }).promise;
-
-    const totalPages = doc.numPages;
-    const pagesToOcr = Math.min(totalPages, OCR_MAX_PAGES);
-
-    // Create tesseract worker (Slovak + Czech + English)
-    const langPath = process.env.TESSERACT_LANG_PATH ?? undefined;
-    const { promise: initTimeout, clear: clearInit } = createTimeout(30_000, "OCR_INIT_TIMEOUT");
-    try {
-      worker = await Promise.race([
-        Tesseract.createWorker("slk+ces+eng", undefined, langPath ? { langPath } : undefined),
-        initTimeout,
-      ]);
-    } finally {
-      clearInit();
-    }
-
-    const pageTexts: string[] = [];
-    let totalTextLength = 0;
-    let reachedLimit = false;
-
-    // Reusable canvas — resized each iteration to avoid native memory leaks
-    let canvas = createCanvas(1, 1);
-
-    for (let i = 1; i <= pagesToOcr; i++) {
-      if (reachedLimit) break;
-      if (Date.now() - ocrStart > OCR_TOTAL_TIMEOUT_MS) break;
-
-      const page = await doc.getPage(i);
-      const viewport = page.getViewport({ scale: OCR_RENDER_DPI / 72 });
-
-      // Resize canvas instead of creating new one
-      canvas.width = Math.round(viewport.width);
-      canvas.height = Math.round(viewport.height);
-      const ctx = canvas.getContext("2d");
-
-      // pdfjs v5 requires `canvas` in RenderParameters alongside canvasContext
-      await page.render({
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        canvasContext: ctx as any,
-        canvas: canvas as any,
-        viewport,
-      }).promise;
-
-      // OCR the rendered image — JPEG is faster and smaller than PNG
-      const imgBuffer = canvas.toBuffer("image/jpeg");
-
-      const { promise: pageTimeout, clear: clearPage } = createTimeout(OCR_PER_PAGE_TIMEOUT_MS, "OCR_PAGE_TIMEOUT");
-      let ocrResult: Tesseract.RecognizeResult;
-      try {
-        ocrResult = await Promise.race([worker.recognize(imgBuffer), pageTimeout]);
-      } finally {
-        clearPage();
-      }
-
-      const pageText = (ocrResult.data.text ?? "").trim();
-      if (pageText) {
-        pageTexts.push(pageText);
-        totalTextLength += pageText.length;
-        if (totalTextLength > MAX_TEXT_LENGTH) {
-          reachedLimit = true;
-        }
-      }
-    }
-
-    // Release canvas native memory
-    canvas.width = 0;
-    canvas.height = 0;
-
-    const fullText = pageTexts.join("\n\n");
-    const nonWhitespace = fullText.replace(/\s/g, "").length;
-
-    if (nonWhitespace < MIN_TEXT_CHARS) {
-      return {
-        text: "",
-        pages: totalPages,
-        truncated: false,
-        totalTextLength: 0,
-        method: "none",
-        error: "PDF neobsahuje čitateľný text ani po OCR rozpoznávaní (kvalita skenu je príliš nízka alebo PDF obsahuje len obrázky)",
-      };
-    }
-
-    const truncated = fullText.length > MAX_TEXT_LENGTH;
-    const text = truncated ? fullText.slice(0, MAX_TEXT_LENGTH) : fullText;
-
-    const result: PdfExtractResult = {
-      text,
-      pages: totalPages,
-      truncated: truncated || pagesToOcr < totalPages,
-      totalTextLength: fullText.length,
-      method: "ocr",
-    };
-
-    if (pagesToOcr < totalPages) {
-      result.error = `OCR spracované len prvých ${pagesToOcr} z ${totalPages} strán`;
-    }
-
-    return result;
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    let errorMsg: string;
-    if (msg === "OCR_INIT_TIMEOUT") {
-      errorMsg = "Inicializácia OCR trvala príliš dlho (timeout 30s) — jazykové modely sa nepodarilo načítať";
-    } else if (msg === "OCR_PAGE_TIMEOUT") {
-      errorMsg = `OCR rozpoznávanie trvalo príliš dlho (timeout ${OCR_PER_PAGE_TIMEOUT_MS / 1000}s na stranu)`;
-    } else if (msg.includes("fetch failed") || msg.includes("network")) {
-      errorMsg = "OCR jazykové modely sa nepodarilo stiahnuť (sieťová chyba). Nastavte TESSERACT_LANG_PATH pre offline režim.";
-    } else {
-      errorMsg = `OCR zlyhalo: ${msg}`;
-    }
-
-    return {
-      text: "",
-      pages: knownPages,
-      truncated: false,
-      totalTextLength: 0,
-      method: "none",
-      error: errorMsg,
-    };
-  } finally {
-    if (worker) {
-      try { await worker.terminate(); } catch { /* ignore */ }
-    }
-    if (doc) {
-      try { await doc.destroy(); } catch { /* ignore */ }
     }
   }
 }

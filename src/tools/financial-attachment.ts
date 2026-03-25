@@ -3,11 +3,11 @@
  *
  * Both tools return up to 3 content blocks:
  *   [0] TextContent      — metadata JSON
- *   [1] TextContent      — extracted text (or note that Claude should read visually)
+ *   [1] TextContent      — extracted text (or note for Claude to read visually)
  *   [2] EmbeddedResource — raw PDF blob for Claude's native visual reading
  *
- * For scanned PDFs (no copyable text), Claude reads the PDF visually from the
- * embedded resource (phase 2). OCR is opt-in via `ocr: true` parameter (phase 3).
+ * For text PDFs, native extraction provides the text directly.
+ * For scanned PDFs, Claude reads the PDF visually from the embedded resource.
  */
 
 import { z } from "zod";
@@ -26,12 +26,11 @@ function buildTextBlock(extract: PdfExtractResult): { type: "text"; text: string
   if (!extract.text) {
     return {
       type: "text" as const,
-      text: `[PDF text extraction]\n${extract.error ?? "Žiadny text v PDF"}`,
+      text: `[PDF text extraction]\n${extract.error ?? "Žiadny text v PDF — prečítaj priložené PDF vizuálne"}`,
     };
   }
 
-  const methodLabel = extract.method === "ocr" ? "OCR rozpoznávanie" : "extrakcia textu";
-  const parts: string[] = [`[${methodLabel} — ${extract.pages} strán`];
+  const parts: string[] = [`[extrakcia textu — ${extract.pages} strán`];
   if (extract.truncated) {
     parts.push(`, skrátené na 50 000 z ${extract.totalTextLength} znakov`);
   }
@@ -55,14 +54,13 @@ export function registerFinancialAttachment(server: McpServer): void {
   // --- financial_attachment ---
   server.tool(
     "financial_attachment",
-    "Stiahne PDF prílohu (poznámky k závierke, skeny) z RegisterUZ. Vráti extrahovaný text aj samotné PDF. Pri skenoch Claude číta PDF vizuálne; pre OCR extrakciu textu použite ocr=true.",
+    "Stiahne PDF prílohu (poznámky k závierke, skeny) z RegisterUZ. Vráti extrahovaný text (ak je kopírovateľný) aj samotné PDF pre vizuálne čítanie.",
     {
       attachmentId: z.number().int().positive().describe("ID prílohy z company_financials (pole prilohy[].id)"),
       nazov: z.string().optional().describe("Názov prílohy (z company_financials prilohy[].nazov)"),
       velkost: z.number().optional().describe("Veľkosť prílohy v bytoch (z company_financials prilohy[].velkost)"),
-      ocr: z.boolean().optional().default(false).describe("Spustiť OCR pre skenované PDF (pomalé, 60s+). Predvolene false — Claude číta PDF vizuálne."),
     },
-    async ({ attachmentId, nazov, velkost, ocr }) => {
+    async ({ attachmentId, nazov, velkost }) => {
       const start = Date.now();
       const MAX_SIZE_BYTES = 10 * 1024 * 1024;
 
@@ -90,7 +88,7 @@ export function registerFinancialAttachment(server: McpServer): void {
 
         // Extract text from PDF (skip for non-PDF attachments)
         const extract = isPdf
-          ? await extractTextFromPdf(result.data.content, { ocr })
+          ? await extractTextFromPdf(result.data.content)
           : { text: "", pages: 0, truncated: false, totalTextLength: 0, method: "none" as const, error: "Príloha nie je PDF — extrakcia textu nie je dostupná" };
 
         return {
@@ -132,12 +130,11 @@ export function registerFinancialAttachment(server: McpServer): void {
   // --- financial_report_pdf ---
   server.tool(
     "financial_report_pdf",
-    "Generovaný PDF účtovného výkazu z RegisterUZ. Vráti extrahovaný text aj samotné PDF. Pri skenoch Claude číta PDF vizuálne; pre OCR použite ocr=true.",
+    "Generovaný PDF účtovného výkazu z RegisterUZ. Vráti extrahovaný text (ak je kopírovateľný) aj samotné PDF pre vizuálne čítanie.",
     {
       reportId: z.number().int().positive().describe("ID výkazu z company_financials (pole vykazy[].id)"),
-      ocr: z.boolean().optional().default(false).describe("Spustiť OCR pre skenované PDF (pomalé, 60s+). Predvolene false — Claude číta PDF vizuálne."),
     },
-    async ({ reportId, ocr }) => {
+    async ({ reportId }) => {
       const start = Date.now();
 
       try {
@@ -149,7 +146,7 @@ export function registerFinancialAttachment(server: McpServer): void {
         }
 
         // Extract text
-        const extract = await extractTextFromPdf(result.data.content, { ocr });
+        const extract = await extractTextFromPdf(result.data.content);
 
         return {
           content: [

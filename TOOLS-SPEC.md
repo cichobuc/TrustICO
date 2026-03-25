@@ -326,7 +326,7 @@ Stiahne PDF prílohu (poznámky k závierke, skeny) z RegisterUZ.
 }
 ```
 
-**Poznámka:** Claude dokáže prečítať base64 PDF vrátane OCR skenov.
+**Poznámka:** Claude dokáže prečítať PDF vizuálne vrátane skenov (embedded resource).
 
 ---
 
