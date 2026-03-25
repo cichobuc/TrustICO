@@ -22,6 +22,8 @@ export function registerCompanyTaxStatus(server: McpServer): void {
     "Kompletný daňový status firmy z Finančnej správy SR — DPH registrácia, index spoľahlivosti, daňový dlžník. Vstup: 8-miestne IČO.",
     { ico: z.string().describe("8-miestne IČO firmy") },
     async ({ ico }) => {
+      const start = Date.now();
+      try {
       const validation = validateICO(ico);
       if (!validation.valid) {
         return {
@@ -70,6 +72,18 @@ export function registerCompanyTaxStatus(server: McpServer): void {
       return {
         content: [{ type: "text" as const, text: JSON.stringify(response, null, 2) }],
       };
+      } catch (err) {
+        return {
+          isError: true,
+          content: [{
+            type: "text" as const,
+            text: JSON.stringify({
+              error: err instanceof Error ? err.message : String(err),
+              _meta: { source: "finspr", durationMs: Date.now() - start, timestamp: new Date().toISOString() },
+            }),
+          }],
+        };
+      }
     },
   );
 }

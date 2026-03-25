@@ -18,7 +18,26 @@ if (!MCP_API_KEY) {
   logger.warn("MCP_API_KEY not set — authentication disabled (development only)");
 }
 
+const MAX_SESSIONS = 100;
+const SESSION_TTL_MS = 30 * 60 * 1000; // 30 minutes
+
 const transports = new Map<string, StreamableHTTPServerTransport>();
+const sessionTimestamps = new Map<string, number>();
+
+/** Evict idle sessions older than SESSION_TTL_MS. */
+function evictStaleSessions(): void {
+  const now = Date.now();
+  for (const [id, ts] of sessionTimestamps) {
+    if (now - ts > SESSION_TTL_MS) {
+      const transport = transports.get(id);
+      if (transport) {
+        transport.close?.();
+        transports.delete(id);
+      }
+      sessionTimestamps.delete(id);
+    }
+  }
+}
 
 /** Verify Bearer token from Authorization header. */
 function authenticate(
@@ -93,6 +112,7 @@ const httpServer = createServer(async (req, res) => {
 
       if (sessionId && transports.has(sessionId)) {
         transport = transports.get(sessionId)!;
+        sessionTimestamps.set(sessionId, Date.now()); // refresh TTL
       } else if (!sessionId) {
         // New session — parse body to check if it's an initialize request
         const body = await readBody(req);
@@ -106,16 +126,28 @@ const httpServer = createServer(async (req, res) => {
         }
 
         if (isInitializeRequest(message)) {
+          // Evict stale sessions and enforce max session limit
+          evictStaleSessions();
+          if (transports.size >= MAX_SESSIONS) {
+            res.writeHead(503, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ error: "Too many active sessions" }));
+            return;
+          }
+
           transport = new StreamableHTTPServerTransport({
             sessionIdGenerator: () => crypto.randomUUID(),
             onsessioninitialized: (id) => {
               transports.set(id, transport);
+              sessionTimestamps.set(id, Date.now());
             },
           });
 
           transport.onclose = () => {
             const id = [...transports.entries()].find(([, t]) => t === transport)?.[0];
-            if (id) transports.delete(id);
+            if (id) {
+              transports.delete(id);
+              sessionTimestamps.delete(id);
+            }
           };
 
           // Create a fresh McpServer per session to avoid shared state

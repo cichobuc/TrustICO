@@ -17,6 +17,8 @@ export function registerCompanyVatCheck(server: McpServer): void {
     "Overenie IČ DPH cez EU VIES — validita, názov a adresa firmy. Vstup: IČ DPH (napr. SK2021869234 alebo 2021869234, auto-prefix SK).",
     { vatNumber: z.string().describe("IČ DPH — napr. 'SK2021869234' alebo '2021869234' (auto-prefix SK)") },
     async ({ vatNumber }) => {
+      const start = Date.now();
+      try {
       const validation = validateICDPH(vatNumber);
       if (!validation.valid) {
         return {
@@ -62,6 +64,18 @@ export function registerCompanyVatCheck(server: McpServer): void {
       return {
         content: [{ type: "text" as const, text: JSON.stringify(response, null, 2) }],
       };
+      } catch (err) {
+        return {
+          isError: true,
+          content: [{
+            type: "text" as const,
+            text: JSON.stringify({
+              error: err instanceof Error ? err.message : String(err),
+              _meta: { source: "vies", durationMs: Date.now() - start, timestamp: new Date().toISOString() },
+            }),
+          }],
+        };
+      }
     },
   );
 }

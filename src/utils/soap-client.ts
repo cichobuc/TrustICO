@@ -60,7 +60,7 @@ async function fetchAndValidateWsdl(wsdlUrl: string): Promise<string> {
     if (!body.includes("<wsdl:") && !body.includes("<definitions") && !body.includes("<?xml")) {
       throw new Error(
         `IS REPLIK WSDL response nie je platný WSDL XML dokument. ` +
-        `Content-Type: ${contentType}. Prvých 200 znakov: ${body.slice(0, 200)}`,
+        `Content-Type: ${contentType}. Skontrolujte URL a konektivitu k replik-ws.justice.sk.`,
       );
     }
 
@@ -101,10 +101,12 @@ function getClient(wsdlUrl: string): Promise<Client> {
 
 // --- Timeout helper ---
 
-function timeoutPromise(ms: number): Promise<never> {
-  return new Promise((_, reject) =>
-    setTimeout(() => reject(new Error(`SOAP request timed out after ${ms}ms`)), ms),
-  );
+function withSoapTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`SOAP request timed out after ${ms}ms`)), ms);
+  });
+  return Promise.race([promise, timeoutPromise]).finally(() => clearTimeout(timer));
 }
 
 // --- Input sanitization ---
@@ -150,7 +152,7 @@ async function callService<T>(
       }
 
       const callPromise = (client as Record<string, (...a: unknown[]) => Promise<unknown[]>>)[methodName](safeArgs);
-      const [result] = await Promise.race([callPromise, timeoutPromise(SOAP_TIMEOUT_MS)]);
+      const [result] = await withSoapTimeout(callPromise, SOAP_TIMEOUT_MS);
       return result as T;
     } catch (err) {
       lastError = err instanceof Error ? err : new Error(String(err));

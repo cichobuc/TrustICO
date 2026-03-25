@@ -16,6 +16,8 @@ export function registerCompanyInsolvency(server: McpServer): void {
     "Insolvenčné konania (konkurz, reštrukturalizácia, oddlženie) firmy z IS REPLIK. Vstup: 8-miestne IČO.",
     { ico: z.string().describe("8-miestne IČO firmy") },
     async ({ ico }) => {
+      const start = Date.now();
+      try {
       const validation = validateICO(ico);
       if (!validation.valid) {
         return {
@@ -57,6 +59,18 @@ export function registerCompanyInsolvency(server: McpServer): void {
       return {
         content: [{ type: "text" as const, text: JSON.stringify(response, null, 2) }],
       };
+      } catch (err) {
+        return {
+          isError: true,
+          content: [{
+            type: "text" as const,
+            text: JSON.stringify({
+              error: err instanceof Error ? err.message : String(err),
+              _meta: { source: "replik", durationMs: Date.now() - start, timestamp: new Date().toISOString() },
+            }),
+          }],
+        };
+      }
     },
   );
 
@@ -66,6 +80,8 @@ export function registerCompanyInsolvency(server: McpServer): void {
     "Oznamy k insolvenčným konaniam firmy z IS REPLIK (uznesenia, výzvy, atď.). Vstup: 8-miestne IČO.",
     { ico: z.string().describe("8-miestne IČO firmy") },
     async ({ ico }) => {
+      const start = Date.now();
+      try {
       const validation = validateICO(ico);
       if (!validation.valid) {
         return {
@@ -107,6 +123,18 @@ export function registerCompanyInsolvency(server: McpServer): void {
       return {
         content: [{ type: "text" as const, text: JSON.stringify(response, null, 2) }],
       };
+      } catch (err) {
+        return {
+          isError: true,
+          content: [{
+            type: "text" as const,
+            text: JSON.stringify({
+              error: err instanceof Error ? err.message : String(err),
+              _meta: { source: "replik", durationMs: Date.now() - start, timestamp: new Date().toISOString() },
+            }),
+          }],
+        };
+      }
     },
   );
 
@@ -116,6 +144,8 @@ export function registerCompanyInsolvency(server: McpServer): void {
     "Detail konkrétneho insolvenčného konania z IS REPLIK podľa ID konania (vrátane udalostí, dlžníka, správcu). Vstup: ID konania.",
     { konanieId: z.string().max(100).describe("ID insolvenčného konania (napr. K-123/2024)") },
     async ({ konanieId }) => {
+      const start = Date.now();
+      try {
       // Basic input validation — prevent excessively long or suspicious input
       if (konanieId.length === 0 || konanieId.length > 100) {
         return {
@@ -157,6 +187,18 @@ export function registerCompanyInsolvency(server: McpServer): void {
       return {
         content: [{ type: "text" as const, text: JSON.stringify(response, null, 2) }],
       };
+      } catch (err) {
+        return {
+          isError: true,
+          content: [{
+            type: "text" as const,
+            text: JSON.stringify({
+              error: err instanceof Error ? err.message : String(err),
+              _meta: { source: "replik", durationMs: Date.now() - start, timestamp: new Date().toISOString() },
+            }),
+          }],
+        };
+      }
     },
   );
 }

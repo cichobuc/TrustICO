@@ -25,20 +25,16 @@ export class TokenBucket {
   }
 
   async acquire(): Promise<void> {
-    this.refill();
-    if (this.tokens >= 1) {
-      this.tokens--;
-      return;
-    }
-    // Wait until next token is available
     const waitMs = this.intervalMs / this.maxTokens;
-    await new Promise((resolve) => setTimeout(resolve, waitMs));
-    this.refill();
-    if (this.tokens < 1) {
-      this.tokens = 0;
-      return;
+    // Loop until a token is available — prevents bypass under sustained load
+    while (true) {
+      this.refill();
+      if (this.tokens >= 1) {
+        this.tokens--;
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, waitMs));
     }
-    this.tokens--;
   }
 
   private refill(): void {

@@ -54,7 +54,8 @@ async function getTesseractWorker(): Promise<any> {
  */
 export async function extractPdfText(buffer: Buffer): Promise<PdfExtractionResult> {
   const start = Date.now();
-  const data = new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+  // Copy buffer to own ArrayBuffer — prevents shared/pooled buffer issues
+  const data = new Uint8Array(buffer);
 
   // Step 1: Try digital text extraction
   try {
